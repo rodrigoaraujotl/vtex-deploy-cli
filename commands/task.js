@@ -79,7 +79,7 @@ async function createTask(nome, numero, options = {}) {
   }
 
   const branchName = `task-${nome}-${numero}`;
-  
+
   logger.info(`Criando task: ${chalk.cyan(branchName)}`);
   logger.newLine();
 
@@ -155,13 +155,17 @@ async function createTask(nome, numero, options = {}) {
 
     // 7. Executar deploy VTEX para QA
     logger.startSpinner('Iniciando deploy VTEX para QA...');
-    const deploySuccess = await vtexService.deployToQA(config.QA_ACCOUNT, config.VTEX_QA_APPKEY, config.VTEX_QA_APPTOKEN);
-    
+    const deploySuccess = await vtexService.deployToQA(
+      config.QA_ACCOUNT,
+      config.VTEX_QA_APPKEY,
+      config.VTEX_QA_APPTOKEN
+    );
+
     if (!deploySuccess) {
       logger.failSpinner('Erro durante o deploy VTEX');
       throw new CliError('Erro durante o deploy VTEX', 1);
     }
-    
+
     logger.succeedSpinner('Deploy VTEX realizado com sucesso');
 
     // 8. Usar workspace da branch
@@ -176,10 +180,10 @@ async function createTask(nome, numero, options = {}) {
 
     // 10. Obter informações do workspace
     const workspaceInfo = await vtexService.getWorkspaceInfo();
-    
+
     logger.newLine();
     logger.complete('Task criada com sucesso!');
-    
+
     // Exibir informações da task
     logger.subtitle('Informações da Task');
     logger.list([
@@ -203,7 +207,6 @@ async function createTask(nome, numero, options = {}) {
       'Push da branch: git push origin ' + branchName,
       'Crie um PR quando estiver pronto: vtex-deploy pr:create qa'
     ]);
-
   } catch (error) {
     // Tentar fazer rollback
     try {
@@ -216,7 +219,7 @@ async function createTask(nome, numero, options = {}) {
     } catch (rollbackError) {
       logger.error('Erro no rollback:', rollbackError);
     }
-    
+
     throw error;
   }
 }
@@ -255,13 +258,16 @@ async function showTaskStatus() {
     const hasUncommitted = await gitService.hasUncommittedChanges();
     const status = {
       'Mudanças não commitadas': hasUncommitted ? 'Sim' : 'Não',
-      'Branch sincronizada': await gitService.isBranchSynced(currentBranch) ? 'Sim' : 'Não'
+      'Branch sincronizada': (await gitService.isBranchSynced(currentBranch)) ? 'Sim' : 'Não'
     };
 
     Object.entries(status).forEach(([key, value]) => {
-      const icon = value === 'Sim' ? 
-        (key.includes('não commitadas') ? chalk.yellow('⚠') : chalk.green('✓')) : 
-        chalk.green('✓');
+      const icon =
+        value === 'Sim'
+          ? key.includes('não commitadas')
+            ? chalk.yellow('⚠')
+            : chalk.green('✓')
+          : chalk.green('✓');
       console.log(`  ${icon} ${key}: ${value}`);
     });
 
@@ -288,17 +294,19 @@ async function showTaskStatus() {
     // Informações da branch remota
     logger.subtitle('Informações Remotas');
     const remoteBranchExists = await gitService.remoteBranchExists(currentBranch);
-    console.log(`  ${remoteBranchExists ? chalk.green('✓') : chalk.red('✗')} Branch existe no remoto: ${remoteBranchExists ? 'Sim' : 'Não'}`);
+    console.log(
+      `  ${remoteBranchExists ? chalk.green('✓') : chalk.red('✗')} Branch existe no remoto: ${remoteBranchExists ? 'Sim' : 'Não'}`
+    );
 
     if (remoteBranchExists && config.BITBUCKET_WORKSPACE && config.BITBUCKET_REPOSITORY) {
       // Verificar se há PR aberto
       try {
         const bitbucketService = require('../services/bitbucket');
         const prs = await bitbucketService.searchPRsByBranch(currentBranch);
-        
+
         if (prs.length > 0) {
           logger.subtitle('Pull Requests');
-          prs.forEach(pr => {
+          prs.forEach((pr) => {
             logger.pullRequest(pr);
           });
         } else {
@@ -308,7 +316,6 @@ async function showTaskStatus() {
         logger.debug('Erro ao buscar PRs:', error);
       }
     }
-
   } catch (error) {
     throw error;
   }
@@ -326,7 +333,7 @@ async function listTasks() {
     }
 
     const branches = await gitService.listBranches();
-    const taskBranches = branches.filter(branch => branch.startsWith('task-'));
+    const taskBranches = branches.filter((branch) => branch.startsWith('task-'));
 
     if (taskBranches.length === 0) {
       logger.info('Nenhuma branch de task encontrada');
@@ -334,9 +341,9 @@ async function listTasks() {
     }
 
     const currentBranch = await gitService.getCurrentBranch();
-    
+
     logger.subtitle('Branches de Task');
-    taskBranches.forEach(branch => {
+    taskBranches.forEach((branch) => {
       const isCurrent = branch === currentBranch;
       const icon = isCurrent ? chalk.green('→') : ' ';
       const branchName = isCurrent ? chalk.green.bold(branch) : chalk.cyan(branch);
@@ -345,11 +352,10 @@ async function listTasks() {
 
     logger.newLine();
     logger.info(`Total: ${taskBranches.length} task(s)`);
-    
+
     if (currentBranch.startsWith('task-')) {
       logger.info(`Atual: ${chalk.green(currentBranch)}`);
     }
-
   } catch (error) {
     throw error;
   }
@@ -377,14 +383,14 @@ async function switchTask(branch, options = {}) {
     const branchExists = await gitService.branchExists(branch);
     if (!branchExists) {
       logger.error(`Branch '${branch}' não existe`);
-      
+
       // Sugerir branches similares
       const branches = await gitService.listBranches();
-      const taskBranches = branches.filter(b => b.startsWith('task-'));
-      
+      const taskBranches = branches.filter((b) => b.startsWith('task-'));
+
       if (taskBranches.length > 0) {
         logger.info('Branches de task disponíveis:');
-        taskBranches.forEach(b => {
+        taskBranches.forEach((b) => {
           console.log(`  ${chalk.cyan(b)}`);
         });
       }
@@ -418,10 +424,10 @@ async function switchTask(branch, options = {}) {
     // Se for uma branch de task, configurar ambiente
     if (branch.startsWith('task-')) {
       const config = envUtils.loadEnv();
-      if (config.VTEX_QA_ACCOUNT && config.VTEX_QA_TOKEN) {
+      if (envUtils.isEnvironmentConfigured(envUtils.getEnvironmentConfig('qa', config))) {
         // Verificar se Docker está rodando
         const dockerStatus = await dockerService.getStatus();
-        
+
         if (dockerStatus.running) {
           logger.startSpinner('Configurando workspace VTEX...');
           try {
@@ -438,7 +444,6 @@ async function switchTask(branch, options = {}) {
     }
 
     logger.complete(`Mudança para task '${branch}' concluída!`);
-
   } catch (error) {
     throw error;
   }

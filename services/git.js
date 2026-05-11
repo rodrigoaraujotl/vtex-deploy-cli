@@ -1,10 +1,15 @@
 const simpleGit = require('simple-git');
 const ora = require('ora');
 const chalk = require('chalk');
+const Validators = require('../utils/validators');
 
 class GitService {
   constructor() {
     this.git = simpleGit();
+  }
+
+  validateBranchName(branchName) {
+    Validators.assert(Validators.branchName(branchName));
   }
 
   /**
@@ -14,11 +19,12 @@ class GitService {
    */
   async createAndCheckoutBranch(branchName) {
     const spinner = ora(`Criando e fazendo checkout da branch ${branchName}...`).start();
-    
+
     try {
+      this.validateBranchName(branchName);
       // Verifica se a branch já existe
       const branches = await this.git.branchLocal();
-      
+
       if (branches.all.includes(branchName)) {
         spinner.warn(`Branch ${branchName} já existe, fazendo checkout...`);
         await this.git.checkout(branchName);
@@ -27,7 +33,7 @@ class GitService {
         await this.git.checkoutLocalBranch(branchName);
         spinner.succeed(`Branch ${branchName} criada e checkout realizado`);
       }
-      
+
       return true;
     } catch (error) {
       spinner.fail(`Erro ao criar/checkout da branch ${branchName}`);
@@ -71,14 +77,14 @@ class GitService {
    */
   async commit(message) {
     const spinner = ora('Fazendo commit das mudanças...').start();
-    
+
     try {
       // Adiciona todos os arquivos
       await this.git.add('.');
-      
+
       // Faz commit
       await this.git.commit(message);
-      
+
       spinner.succeed('Commit realizado com sucesso');
       return true;
     } catch (error) {
@@ -96,18 +102,18 @@ class GitService {
    */
   async pushBranch(remote = 'origin', branch = null) {
     const spinner = ora('Fazendo push da branch...').start();
-    
+
     try {
-      const currentBranch = branch || await this.getCurrentBranch();
-      
+      const currentBranch = branch || (await this.getCurrentBranch());
+
       if (!currentBranch) {
         spinner.fail('Não foi possível determinar a branch atual');
         return false;
       }
-      
+
       // Faz push da branch
       await this.git.push(remote, currentBranch, { '--set-upstream': null });
-      
+
       spinner.succeed(`Push da branch ${currentBranch} realizado com sucesso`);
       return true;
     } catch (error) {
@@ -125,14 +131,15 @@ class GitService {
    */
   async pull(remote = 'origin', branch = null) {
     const spinner = ora('Fazendo pull das mudanças...').start();
-    
+
     try {
       if (branch) {
+        this.validateBranchName(branch);
         await this.git.pull(remote, branch);
       } else {
         await this.git.pull();
       }
-      
+
       spinner.succeed('Pull realizado com sucesso');
       return true;
     } catch (error) {
@@ -150,7 +157,7 @@ class GitService {
     try {
       const local = await this.git.branchLocal();
       const remote = await this.git.branch(['-r']);
-      
+
       return {
         current: local.current,
         local: local.all,
@@ -170,6 +177,7 @@ class GitService {
    */
   async branchExistsRemotely(branchName, remote = 'origin') {
     try {
+      this.validateBranchName(branchName);
       const branches = await this.git.branch(['-r']);
       const remoteBranchName = `${remote}/${branchName}`;
       return branches.all.includes(remoteBranchName);
@@ -187,9 +195,9 @@ class GitService {
     try {
       const remotes = await this.git.getRemotes(true);
       const status = await this.git.status();
-      
-      const originRemote = remotes.find(remote => remote.name === 'origin');
-      
+
+      const originRemote = remotes.find((remote) => remote.name === 'origin');
+
       return {
         currentBranch: status.current,
         remoteUrl: originRemote ? originRemote.refs.fetch : null,
@@ -210,8 +218,9 @@ class GitService {
    */
   async checkout(branchName) {
     const spinner = ora(`Fazendo checkout para ${branchName}...`).start();
-    
+
     try {
+      this.validateBranchName(branchName);
       await this.git.checkout(branchName);
       spinner.succeed(`Checkout para ${branchName} realizado com sucesso`);
       return true;
@@ -257,19 +266,19 @@ class GitService {
   async validateBranchForPR(invalidBranches = ['main', 'master', 'staging', 'develop']) {
     try {
       const currentBranch = await this.getCurrentBranch();
-      
+
       if (!currentBranch) {
         return { valid: false, message: 'Não foi possível determinar a branch atual' };
       }
-      
+
       if (invalidBranches.includes(currentBranch)) {
-        return { 
-          valid: false, 
+        return {
+          valid: false,
           message: `Não é possível criar PR a partir da branch ${currentBranch}`,
-          currentBranch 
+          currentBranch
         };
       }
-      
+
       return { valid: true, currentBranch };
     } catch (error) {
       return { valid: false, message: `Erro ao validar branch: ${error.message}` };

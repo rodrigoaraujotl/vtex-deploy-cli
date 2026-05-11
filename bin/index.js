@@ -2,6 +2,7 @@
 
 const { Command } = require('commander');
 const chalk = require('chalk');
+const pkg = require('../package.json');
 const ConfigCommand = require('../commands/config');
 const TaskCommand = require('../commands/task');
 const PrCommand = require('../commands/pr');

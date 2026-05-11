@@ -72,17 +72,18 @@ async function executeDeploy(ambiente, options = {}) {
 
   // Carregar configuração
   const config = envUtils.loadEnv();
-  const vtexConfig = ambiente === 'qa' ? 
-    { 
-      account: config.QA_ACCOUNT, 
-      appkey: config.VTEX_QA_APPKEY, 
-      apptoken: config.VTEX_QA_APPTOKEN 
-    } :
-    { 
-      account: config.PROD_ACCOUNT, 
-      appkey: config.VTEX_PROD_APPKEY, 
-      apptoken: config.VTEX_PROD_APPTOKEN 
-    };
+  const vtexConfig =
+    ambiente === 'qa'
+      ? {
+          account: config.QA_ACCOUNT,
+          appkey: config.VTEX_QA_APPKEY,
+          apptoken: config.VTEX_QA_APPTOKEN
+        }
+      : {
+          account: config.PROD_ACCOUNT,
+          appkey: config.VTEX_PROD_APPKEY,
+          apptoken: config.VTEX_PROD_APPTOKEN
+        };
 
   if (!vtexConfig.account || !vtexConfig.appkey || !vtexConfig.apptoken) {
     throw new CliError(`Configuração VTEX para ${ambiente.toUpperCase()} não encontrada. Execute: vtex-deploy config:init`, 2);
@@ -92,16 +93,16 @@ async function executeDeploy(ambiente, options = {}) {
     // 1. Verificar se estamos em um repositório Git
     let currentBranch = 'unknown';
     let workspace = options.workspace;
-    
+
     if (await gitService.isGitRepository()) {
       currentBranch = await gitService.getCurrentBranch();
-      
+
       if (!workspace) {
         workspace = currentBranch;
       }
-      
+
       logger.info(`Branch atual: ${chalk.cyan(currentBranch)}`);
-      
+
       // Verificar se há mudanças não commitadas
       const hasUncommitted = await gitService.hasUncommittedChanges();
       if (hasUncommitted && !options.force) {
@@ -134,12 +135,12 @@ async function executeDeploy(ambiente, options = {}) {
     // 2. Verificar se Docker está disponível e rodando
     logger.startSpinner('Verificando Docker...');
     const dockerStatus = await dockerService.getStatus();
-    
+
     if (!dockerStatus.available) {
       logger.failSpinner('Docker não está disponível');
       throw new CliError('Docker é necessário para executar os comandos VTEX', 1);
     }
-    
+
     if (!dockerStatus.running) {
       logger.updateSpinner('Iniciando containers Docker...');
       await dockerService.startContainers();
@@ -182,16 +183,21 @@ async function executeDeploy(ambiente, options = {}) {
     // 4. Executar deploy VTEX (com geração automática de token)
     logger.newLine();
     logger.startSpinner('Iniciando deploy VTEX...');
-    
-    const deploySuccess = ambiente === 'qa' ?
-      await vtexService.deployToQA(vtexConfig.account, vtexConfig.appkey, vtexConfig.apptoken) :
-      await vtexService.deployToProduction(vtexConfig.account, vtexConfig.appkey, vtexConfig.apptoken);
-    
+
+    const deploySuccess =
+      ambiente === 'qa'
+        ? await vtexService.deployToQA(vtexConfig.account, vtexConfig.appkey, vtexConfig.apptoken)
+        : await vtexService.deployToProduction(
+            vtexConfig.account,
+            vtexConfig.appkey,
+            vtexConfig.apptoken
+          );
+
     if (!deploySuccess) {
       logger.failSpinner('Erro durante o deploy VTEX');
       throw new CliError('Erro durante o deploy VTEX', 1);
     }
-    
+
     logger.succeedSpinner('Deploy VTEX realizado com sucesso');
 
     // 5. Usar workspace
@@ -201,13 +207,13 @@ async function executeDeploy(ambiente, options = {}) {
 
     // 6. Executar etapas do deploy
     const startTime = Date.now();
-    
+
     if (options.onlyLink) {
       // Apenas link
       logger.startSpinner('Fazendo link da aplicação...');
       const linkResult = await vtexService.link();
       logger.succeedSpinner('Link realizado com sucesso');
-      
+
       if (linkResult && linkResult.previewUrl) {
         logger.newLine();
         logger.url('URL de Preview', linkResult.previewUrl);
@@ -220,12 +226,12 @@ async function executeDeploy(ambiente, options = {}) {
     // 7. Obter informações finais
     const endTime = Date.now();
     const duration = Math.round((endTime - startTime) / 1000);
-    
+
     const workspaceInfo = await vtexService.getWorkspaceInfo();
-    
+
     logger.newLine();
     logger.complete(`Deploy para ${ambiente.toUpperCase()} concluído!`);
-    
+
     // Exibir resumo
     logger.subtitle('Resumo do Deploy');
     logger.list([
@@ -246,9 +252,8 @@ async function executeDeploy(ambiente, options = {}) {
       nextSteps.push('Verifique métricas e logs');
       nextSteps.push('Comunique a equipe sobre o deploy');
     }
-    
-    logger.nextSteps(nextSteps);
 
+    logger.nextSteps(nextSteps);
   } catch (error) {
     // Sugerir ações de recuperação
     logger.newLine();
@@ -258,7 +263,7 @@ async function executeDeploy(ambiente, options = {}) {
       'Verifique o status: vtex-deploy deploy:status',
       'Se necessário, faça rollback: vtex-deploy deploy:rollback ' + ambiente
     ]);
-    
+
     throw error;
   }
 }
@@ -309,7 +314,7 @@ async function showDeployStatus(options = {}) {
   try {
     // Carregar configuração
     const config = envUtils.loadEnv();
-    
+
     // Verificar Docker
     logger.subtitle('Status do Docker');
     const dockerStatus = await dockerService.getStatus();
@@ -325,13 +330,21 @@ async function showDeployStatus(options = {}) {
 
     // Status VTEX para cada ambiente configurado
     const environments = [];
-    
+
     if (config.VTEX_QA_ACCOUNT && config.VTEX_QA_TOKEN) {
-      environments.push({ name: 'qa', account: config.VTEX_QA_ACCOUNT, token: config.VTEX_QA_TOKEN });
+      environments.push({
+        name: 'qa',
+        account: config.VTEX_QA_ACCOUNT,
+        token: config.VTEX_QA_TOKEN
+      });
     }
-    
+
     if (config.VTEX_PROD_ACCOUNT && config.VTEX_PROD_TOKEN) {
-      environments.push({ name: 'prod', account: config.VTEX_PROD_ACCOUNT, token: config.VTEX_PROD_TOKEN });
+      environments.push({
+        name: 'prod',
+        account: config.VTEX_PROD_ACCOUNT,
+        token: config.VTEX_PROD_TOKEN
+      });
     }
 
     for (const env of environments) {
@@ -340,35 +353,34 @@ async function showDeployStatus(options = {}) {
       }
 
       logger.subtitle(`Status VTEX - ${env.name.toUpperCase()}`);
-      
+
       try {
         // Login
         await vtexService.login(env.account, env.token);
-        
+
         // Obter informações do workspace
         const workspaceInfo = await vtexService.getWorkspaceInfo();
         logger.workspace(workspaceInfo);
-        
+
         // Verificar se há aplicações instaladas
         const apps = await vtexService.listApps();
         if (apps && apps.length > 0) {
           logger.info(`Aplicações instaladas: ${apps.length}`);
-          
+
           // Mostrar apenas as primeiras 5
           const appsToShow = apps.slice(0, 5);
-          appsToShow.forEach(app => {
+          appsToShow.forEach((app) => {
             console.log(`  ${chalk.cyan('•')} ${app.name}@${app.version}`);
           });
-          
+
           if (apps.length > 5) {
             console.log(`  ${chalk.gray('... e mais ' + (apps.length - 5) + ' aplicações')}`);
           }
         }
-        
       } catch (error) {
         logger.error(`Erro ao obter status do ${env.name.toUpperCase()}:`, error.message);
       }
-      
+
       logger.newLine();
     }
 
@@ -377,13 +389,12 @@ async function showDeployStatus(options = {}) {
       logger.subtitle('Status do Git');
       const currentBranch = await gitService.getCurrentBranch();
       const hasUncommitted = await gitService.hasUncommittedChanges();
-      
+
       logger.list([
         `Branch atual: ${chalk.cyan(currentBranch)}`,
         `Mudanças não commitadas: ${hasUncommitted ? chalk.yellow('Sim') : chalk.green('Não')}`
       ]);
     }
-
   } catch (error) {
     throw error;
   }
@@ -453,7 +464,7 @@ async function rollbackDeploy(ambiente, options = {}) {
 
     // Selecionar versão
     let targetVersion = options.version;
-    
+
     if (!targetVersion) {
       targetVersion = await choose(options, {
         type: 'list',
@@ -502,7 +513,6 @@ async function rollbackDeploy(ambiente, options = {}) {
       'Comunique a equipe sobre o rollback',
       'Investigue a causa do problema na versão anterior'
     ]);
-
   } catch (error) {
     throw error;
   }
@@ -528,13 +538,13 @@ async function showDeployLogs(options = {}) {
       lines: parseInt(options.lines) || 50,
       follow: options.follow
     });
-    
+
     logger.succeedSpinner('Logs obtidos');
     logger.newLine();
 
     // Exibir logs
     if (logs && logs.length > 0) {
-      logs.forEach(log => {
+      logs.forEach((log) => {
         // Colorir logs baseado no nível
         if (log.includes('ERROR') || log.includes('error')) {
           console.log(chalk.red(log));
@@ -553,7 +563,6 @@ async function showDeployLogs(options = {}) {
     if (options.follow) {
       logger.info('Acompanhando logs... (Ctrl+C para sair)');
     }
-
   } catch (error) {
     throw error;
   }
