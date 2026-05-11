@@ -205,6 +205,18 @@ class EnvUtils {
     return lines.join('\n');
   }
 
+
+  /**
+   * Retorna todas as variáveis carregadas combinando process.env e arquivo .env.
+   * @returns {Object} variáveis de ambiente disponíveis
+   */
+  loadEnv() {
+    return {
+      ...this.envVars,
+      ...process.env
+    };
+  }
+
   /**
    * Verifica se o arquivo .env existe
    * @returns {boolean} true se existe

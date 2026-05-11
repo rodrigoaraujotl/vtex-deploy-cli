@@ -1,4 +1,3 @@
-const inquirer = require('inquirer');
 const chalk = require('chalk');
 const gitService = require('../services/git');
 const dockerService = require('../services/docker');
@@ -7,6 +6,7 @@ const bitbucketService = require('../services/bitbucket');
 const envUtils = require('../utils/env');
 const logger = require('../utils/logger');
 const validators = require('../utils/validators');
+const { addAutomationOptions, confirm, requireCIFlag, runAction, CliError } = require('../utils/cli');
 
 /**
  * Registra comandos relacionados a Pull Requests
@@ -14,19 +14,14 @@ const validators = require('../utils/validators');
  */
 function registerPRCommands(program) {
   // Comando pr:create
-  program
+  addAutomationOptions(program
     .command('pr:create <ambiente>')
     .description('Cria Pull Request para QA ou Produção')
     .option('-t, --title <title>', 'Título do Pull Request')
     .option('-d, --description <description>', 'Descrição do Pull Request')
-    .option('--no-deploy', 'Não executar deploy antes de criar o PR')
+    .option('--no-deploy', 'Não executar deploy antes de criar o PR'))
     .action(async (ambiente, options) => {
-      try {
-        await createPullRequest(ambiente, options);
-      } catch (error) {
-        logger.error('Erro ao criar Pull Request:', error);
-        process.exit(1);
-      }
+      await runAction(() => createPullRequest(ambiente, options), 'Erro ao criar Pull Request:');
     });
 
   // Comando pr:status
@@ -34,12 +29,7 @@ function registerPRCommands(program) {
     .command('pr:status')
     .description('Exibe status dos Pull Requests da branch atual')
     .action(async () => {
-      try {
-        await showPRStatus();
-      } catch (error) {
-        logger.error('Erro ao obter status do PR:', error);
-        process.exit(1);
-      }
+      await runAction(() => showPRStatus(), 'Erro ao obter status do PR:');
     });
 
   // Comando pr:list
@@ -49,26 +39,17 @@ function registerPRCommands(program) {
     .option('-a, --author <author>', 'Filtrar por autor')
     .option('-s, --state <state>', 'Filtrar por estado (OPEN, MERGED, DECLINED)')
     .action(async (options) => {
-      try {
-        await listPullRequests(options);
-      } catch (error) {
-        logger.error('Erro ao listar Pull Requests:', error);
-        process.exit(1);
-      }
+      await runAction(() => listPullRequests(options), 'Erro ao listar Pull Requests:');
     });
 
   // Comando pr:merge
-  program
+  addAutomationOptions(program
     .command('pr:merge <prId>')
     .description('Faz merge de um Pull Request')
     .option('--close-branch', 'Fechar branch após merge')
+    .option('--confirm-merge', 'Confirma explicitamente o merge em modo CI/não interativo'))
     .action(async (prId, options) => {
-      try {
-        await mergePullRequest(prId, options);
-      } catch (error) {
-        logger.error('Erro ao fazer merge do PR:', error);
-        process.exit(1);
-      }
+      await runAction(() => mergePullRequest(prId, options), 'Erro ao fazer merge do PR:');
     });
 }
 
@@ -84,21 +65,18 @@ async function createPullRequest(ambiente, options = {}) {
   // Validar ambiente
   const envValidation = validators.environment(ambiente);
   if (envValidation !== true) {
-    logger.error('Ambiente inválido:', envValidation);
-    return;
+    throw new CliError(`Ambiente inválido: ${envValidation}`, 2);
   }
 
   // Verificar se estamos em um repositório Git
   if (!await gitService.isGitRepository()) {
-    logger.error('Este diretório não é um repositório Git');
-    return;
+    throw new CliError('Este diretório não é um repositório Git', 2);
   }
 
   // Carregar configuração
   const config = envUtils.loadEnv();
   if (!config.BITBUCKET_WORKSPACE || !config.BITBUCKET_REPOSITORY || !config.BITBUCKET_TOKEN) {
-    logger.error('Configuração Bitbucket não encontrada. Execute: vtex-deploy config:init');
-    return;
+    throw new CliError('Configuração Bitbucket não encontrada. Execute: vtex-deploy config:init', 2);
   }
 
   const vtexConfig = ambiente === 'qa' ? 
@@ -114,8 +92,7 @@ async function createPullRequest(ambiente, options = {}) {
     };
 
   if (!vtexConfig.account || !vtexConfig.appkey || !vtexConfig.apptoken) {
-    logger.error(`Configuração VTEX para ${ambiente.toUpperCase()} não encontrada`);
-    return;
+    throw new CliError(`Configuração VTEX para ${ambiente.toUpperCase()} não encontrada`, 2);
   }
 
   try {
@@ -126,8 +103,7 @@ async function createPullRequest(ambiente, options = {}) {
     // 2. Validar branch atual
     const branchValidation = await gitService.validateBranchForPR(currentBranch, ambiente);
     if (!branchValidation.valid) {
-      logger.error('Branch inválida para PR:', branchValidation.reason);
-      return;
+      throw new CliError(`Branch inválida para PR: ${branchValidation.reason}`, 2);
     }
 
     // 3. Determinar branch de destino
@@ -137,29 +113,27 @@ async function createPullRequest(ambiente, options = {}) {
     // 4. Verificar se há mudanças não commitadas
     const hasUncommitted = await gitService.hasUncommittedChanges();
     if (hasUncommitted) {
-      logger.error('Há mudanças não commitadas. Commit ou stash suas mudanças antes de criar o PR');
-      return;
+      throw new CliError('Há mudanças não commitadas. Commit ou stash suas mudanças antes de criar o PR', 2);
     }
 
     // 5. Verificar se a branch está sincronizada
     const isSynced = await gitService.isBranchSynced(currentBranch);
     if (!isSynced) {
-      const { shouldPush } = await inquirer.prompt([
-        {
-          type: 'confirm',
-          name: 'shouldPush',
-          message: 'A branch não está sincronizada com o remoto. Deseja fazer push?',
-          default: true
-        }
-      ]);
+      const shouldPush = await confirm(options, {
+        type: 'confirm',
+        name: 'shouldPush',
+        message: 'A branch não está sincronizada com o remoto. Deseja fazer push?',
+        default: true
+      }, {
+        errorMessage: 'Modo não interativo: a branch deve estar sincronizada antes de criar o PR.'
+      });
 
       if (shouldPush) {
         logger.startSpinner('Fazendo push da branch...');
         await gitService.push(currentBranch);
         logger.succeedSpinner('Push realizado com sucesso');
       } else {
-        logger.error('Branch deve estar sincronizada para criar PR');
-        return;
+        throw new CliError('Branch deve estar sincronizada para criar PR', 2);
       }
     }
 
@@ -177,14 +151,14 @@ async function createPullRequest(ambiente, options = {}) {
           logger.pullRequest(pr);
         });
         
-        const { shouldContinue } = await inquirer.prompt([
-          {
-            type: 'confirm',
-            name: 'shouldContinue',
-            message: 'Deseja continuar mesmo assim?',
-            default: false
-          }
-        ]);
+        const shouldContinue = await confirm(options, {
+          type: 'confirm',
+          name: 'shouldContinue',
+          message: 'Deseja continuar mesmo assim?',
+          default: false
+        }, {
+          errorMessage: 'Modo não interativo: já existe PR aberto para esta branch. Feche o PR existente ou execute interativamente.'
+        });
         
         if (!shouldContinue) {
           logger.info('Operação cancelada');
@@ -205,14 +179,14 @@ async function createPullRequest(ambiente, options = {}) {
       `Deploy VTEX: ${options.deploy !== false ? chalk.green('Sim') : chalk.red('Não')}`
     ]);
 
-    const { shouldProceed } = await inquirer.prompt([
-      {
-        type: 'confirm',
-        name: 'shouldProceed',
-        message: `Confirma a criação do PR para ${ambiente.toUpperCase()}?`,
-        default: true
-      }
-    ]);
+    const shouldProceed = await confirm(options, {
+      type: 'confirm',
+      name: 'shouldProceed',
+      message: `Confirma a criação do PR para ${ambiente.toUpperCase()}?`,
+      default: true
+    }, {
+      errorMessage: 'Modo não interativo: use --yes para confirmar a criação do PR sem prompt.'
+    });
 
     if (!shouldProceed) {
       logger.info('Operação cancelada pelo usuário');
@@ -227,8 +201,7 @@ async function createPullRequest(ambiente, options = {}) {
       // Verificar se Docker está rodando
       const dockerStatus = await dockerService.getStatus();
       if (!dockerStatus.running) {
-        logger.error('Docker não está rodando. Execute: docker-compose up -d');
-        return;
+        throw new CliError('Docker não está rodando. Execute: docker-compose up -d', 1);
       }
 
       // Deploy VTEX com geração automática de token
@@ -239,8 +212,7 @@ async function createPullRequest(ambiente, options = {}) {
         await vtexService.deployToProduction(vtexConfig.account, vtexConfig.appkey, vtexConfig.apptoken);
       
       if (!deploySuccess) {
-        logger.error('Erro durante o deploy VTEX');
-        return;
+        throw new CliError('Erro durante o deploy VTEX', 1);
       }
       
       logger.succeedSpinner('Deploy VTEX realizado com sucesso');
@@ -291,7 +263,6 @@ async function createPullRequest(ambiente, options = {}) {
     ]);
 
   } catch (error) {
-    logger.error('Erro durante a criação do PR:', error);
     throw error;
   }
 }
@@ -385,13 +356,11 @@ async function showPRStatus() {
     // Verificar configuração
     const config = envUtils.loadEnv();
     if (!config.BITBUCKET_WORKSPACE || !config.BITBUCKET_REPOSITORY) {
-      logger.error('Configuração Bitbucket não encontrada');
-      return;
+      throw new CliError('Configuração Bitbucket não encontrada', 2);
     }
 
     if (!await gitService.isGitRepository()) {
-      logger.error('Este diretório não é um repositório Git');
-      return;
+      throw new CliError('Este diretório não é um repositório Git', 2);
     }
 
     // Obter branch atual
@@ -427,7 +396,7 @@ async function showPRStatus() {
     }
 
   } catch (error) {
-    logger.error('Erro ao obter status dos PRs:', error);
+    throw error;
   }
 }
 
@@ -442,8 +411,7 @@ async function listPullRequests(options = {}) {
     // Verificar configuração
     const config = envUtils.loadEnv();
     if (!config.BITBUCKET_WORKSPACE || !config.BITBUCKET_REPOSITORY) {
-      logger.error('Configuração Bitbucket não encontrada');
-      return;
+      throw new CliError('Configuração Bitbucket não encontrada', 2);
     }
 
     // Buscar PRs
@@ -483,7 +451,7 @@ async function listPullRequests(options = {}) {
     });
 
   } catch (error) {
-    logger.error('Erro ao listar PRs:', error);
+    throw error;
   }
 }
 
@@ -496,11 +464,12 @@ async function mergePullRequest(prId, options = {}) {
   logger.title('Merge de Pull Request');
 
   try {
+    requireCIFlag(options, 'confirmMerge', '--confirm-merge', 'merge');
+
     // Verificar configuração
     const config = envUtils.loadEnv();
     if (!config.BITBUCKET_WORKSPACE || !config.BITBUCKET_REPOSITORY) {
-      logger.error('Configuração Bitbucket não encontrada');
-      return;
+      throw new CliError('Configuração Bitbucket não encontrada', 2);
     }
 
     // Buscar PR
@@ -509,7 +478,7 @@ async function mergePullRequest(prId, options = {}) {
     
     if (!pr) {
       logger.failSpinner('Pull Request não encontrado');
-      return;
+      throw new CliError('Pull Request não encontrado', 2);
     }
 
     logger.succeedSpinner('Pull Request encontrado');
@@ -517,19 +486,20 @@ async function mergePullRequest(prId, options = {}) {
 
     // Verificar se pode fazer merge
     if (pr.state !== 'OPEN') {
-      logger.error(`PR não está aberto. Estado atual: ${pr.state}`);
-      return;
+      throw new CliError(`PR não está aberto. Estado atual: ${pr.state}`, 2);
     }
 
     // Confirmar merge
-    const { shouldMerge } = await inquirer.prompt([
-      {
-        type: 'confirm',
-        name: 'shouldMerge',
-        message: 'Confirma o merge deste Pull Request?',
-        default: false
-      }
-    ]);
+    const shouldMerge = await confirm(options, {
+      type: 'confirm',
+      name: 'shouldMerge',
+      message: 'Confirma o merge deste Pull Request?',
+      default: false
+    }, {
+      autoYes: Boolean(options.confirmMerge),
+      allowYes: false,
+      errorMessage: 'Modo não interativo: use --confirm-merge para confirmar o merge sem prompt.'
+    });
 
     if (!shouldMerge) {
       logger.info('Merge cancelado');
@@ -550,7 +520,7 @@ async function mergePullRequest(prId, options = {}) {
     }
 
   } catch (error) {
-    logger.error('Erro ao fazer merge do PR:', error);
+    throw error;
   }
 }
 
