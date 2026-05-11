@@ -7,8 +7,10 @@
     "vtex-deploy": "./bin/index.js"
   },
   "scripts": {
-    "test": "node --test",
-    "start": "node index.js"
+    "test": "node --test \"test/**/*.test.js\"",
+    "start": "node index.js",
+    "lint": "eslint .",
+    "format:check": "prettier --check ."
   },
   "keywords": [
     "vtex",

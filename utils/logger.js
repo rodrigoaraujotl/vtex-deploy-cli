@@ -7,14 +7,66 @@ class Logger {
   }
 
   /**
+   * Redige tokens e segredos de mensagens/objetos antes de exibir em logs.
+   * @param {any} value valor potencialmente sensível
+   * @returns {any} valor com segredos mascarados
+   */
+  redactSensitive(value) {
+    if (value === null || value === undefined) {
+      return value;
+    }
+
+    if (value instanceof Error) {
+      const redactedError = new Error(this.redactSensitive(value.message));
+      redactedError.name = value.name;
+      if (value.stack) {
+        redactedError.stack = this.redactSensitive(value.stack);
+      }
+      return redactedError;
+    }
+
+    if (Array.isArray(value)) {
+      return value.map(item => this.redactSensitive(item));
+    }
+
+    if (typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value).map(([key, item]) => {
+          if (this.isSensitiveKey(key)) {
+            return [key, '[REDACTED]'];
+          }
+          return [key, this.redactSensitive(item)];
+        })
+      );
+    }
+
+    if (typeof value !== 'string') {
+      return value;
+    }
+
+    return value
+      .replace(/(--token(?:=|\s+))([^\s]+)/gi, '$1[REDACTED]')
+      .replace(/((?:VTEX_[A-Z0-9_]*_APPTOKEN|BITBUCKET_TOKEN)\s*[=:]\s*)([^\s]+)/gi, '$1[REDACTED]');
+  }
+
+  /**
+   * Verifica se uma chave representa um segredo conhecido.
+   * @param {string} key chave do objeto
+   * @returns {boolean} true se a chave for sensível
+   */
+  isSensitiveKey(key) {
+    return /^(?:token|apptoken|BITBUCKET_TOKEN|VTEX_[A-Z0-9_]*_APPTOKEN)$/i.test(key);
+  }
+
+  /**
    * Log de informação
    * @param {string} message mensagem
    * @param {any} data dados adicionais (opcional)
    */
   info(message, data = null) {
-    console.log(chalk.blue('ℹ'), message);
+    console.log(chalk.blue('ℹ'), this.redactSensitive(message));
     if (data) {
-      console.log(data);
+      console.log(this.redactSensitive(data));
     }
   }
 
@@ -24,9 +76,9 @@ class Logger {
    * @param {any} data dados adicionais (opcional)
    */
   success(message, data = null) {
-    console.log(chalk.green('✓'), message);
+    console.log(chalk.green('✓'), this.redactSensitive(message));
     if (data) {
-      console.log(data);
+      console.log(this.redactSensitive(data));
     }
   }
 
@@ -36,9 +88,9 @@ class Logger {
    * @param {any} data dados adicionais (opcional)
    */
   warn(message, data = null) {
-    console.log(chalk.yellow('⚠'), message);
+    console.log(chalk.yellow('⚠'), this.redactSensitive(message));
     if (data) {
-      console.log(data);
+      console.log(this.redactSensitive(data));
     }
   }
 
@@ -48,12 +100,12 @@ class Logger {
    * @param {any} error erro (opcional)
    */
   error(message, error = null) {
-    console.log(chalk.red('✗'), message);
+    console.log(chalk.red('✗'), this.redactSensitive(message));
     if (error) {
       if (error.stack) {
-        console.error(chalk.red(error.stack));
+        console.error(chalk.red(this.redactSensitive(error.stack)));
       } else {
-        console.error(chalk.red(error));
+        console.error(chalk.red(this.redactSensitive(error)));
       }
     }
   }
@@ -65,9 +117,9 @@ class Logger {
    */
   debug(message, data = null) {
     if (process.env.DEBUG || process.env.NODE_ENV === 'development') {
-      console.log(chalk.gray('🐛'), chalk.gray(message));
+      console.log(chalk.gray('🐛'), chalk.gray(this.redactSensitive(message)));
       if (data) {
-        console.log(chalk.gray(JSON.stringify(data, null, 2)));
+        console.log(chalk.gray(JSON.stringify(this.redactSensitive(data), null, 2)));
       }
     }
   }
@@ -78,7 +130,7 @@ class Logger {
    * @returns {Object} instância do spinner
    */
   startSpinner(message) {
-    this.spinner = ora(message).start();
+    this.spinner = ora(this.redactSensitive(message)).start();
     return this.spinner;
   }
 
@@ -88,7 +140,7 @@ class Logger {
    */
   succeedSpinner(message) {
     if (this.spinner) {
-      this.spinner.succeed(message);
+      this.spinner.succeed(this.redactSensitive(message));
       this.spinner = null;
     }
   }
@@ -99,7 +151,7 @@ class Logger {
    */
   failSpinner(message) {
     if (this.spinner) {
-      this.spinner.fail(message);
+      this.spinner.fail(this.redactSensitive(message));
       this.spinner = null;
     }
   }
@@ -110,7 +162,7 @@ class Logger {
    */
   warnSpinner(message) {
     if (this.spinner) {
-      this.spinner.warn(message);
+      this.spinner.warn(this.redactSensitive(message));
       this.spinner = null;
     }
   }
@@ -121,7 +173,7 @@ class Logger {
    */
   updateSpinner(message) {
     if (this.spinner) {
-      this.spinner.text = message;
+      this.spinner.text = this.redactSensitive(message);
     }
   }
 
@@ -164,7 +216,7 @@ class Logger {
    * @param {string} symbol símbolo para cada item
    */
   list(items, symbol = '•') {
-    items.forEach(item => {
+    items.forEach((item) => {
       console.log(`  ${chalk.cyan(symbol)} ${item}`);
     });
   }
@@ -179,8 +231,8 @@ class Logger {
       console.log(chalk.bold(headers.join('\t')));
       console.log(chalk.gray('─'.repeat(headers.join('\t').length)));
     }
-    
-    rows.forEach(row => {
+
+    rows.forEach((row) => {
       if (Array.isArray(row)) {
         console.log(row.join('\t'));
       } else {
@@ -195,12 +247,12 @@ class Logger {
    */
   status(status) {
     this.subtitle('Status Atual');
-    
+
     Object.entries(status).forEach(([key, value]) => {
       const formattedKey = key.charAt(0).toUpperCase() + key.slice(1);
       const statusIcon = value ? chalk.green('✓') : chalk.red('✗');
       const statusText = value ? chalk.green('OK') : chalk.red('Erro');
-      
+
       console.log(`  ${statusIcon} ${formattedKey}: ${statusText}`);
     });
   }
@@ -219,7 +271,7 @@ class Logger {
    * @param {string} command comando
    */
   command(command) {
-    console.log(`${chalk.yellow('$')} ${chalk.white(command)}`);
+    console.log(`${chalk.yellow('$')} ${chalk.white(this.redactSensitive(command))}`);
   }
 
   /**
@@ -230,7 +282,9 @@ class Logger {
     this.subtitle(`Pull Request #${pr.id}`);
     console.log(`  ${chalk.yellow('Título:')} ${pr.title}`);
     console.log(`  ${chalk.yellow('Estado:')} ${this.formatPRState(pr.state)}`);
-    console.log(`  ${chalk.yellow('Branch:')} ${chalk.cyan(pr.sourceBranch)} → ${chalk.cyan(pr.destinationBranch)}`);
+    console.log(
+      `  ${chalk.yellow('Branch:')} ${chalk.cyan(pr.sourceBranch)} → ${chalk.cyan(pr.destinationBranch)}`
+    );
     console.log(`  ${chalk.yellow('Autor:')} ${pr.author}`);
     console.log(`  ${chalk.yellow('Criado:')} ${pr.createdOn}`);
     this.url('URL', pr.url);

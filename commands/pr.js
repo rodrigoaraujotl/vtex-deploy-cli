@@ -89,7 +89,7 @@ async function createPullRequest(ambiente, options = {}) {
   }
 
   // Verificar se estamos em um repositório Git
-  if (!await gitService.isGitRepository()) {
+  if (!(await gitService.isGitRepository())) {
     logger.error('Este diretório não é um repositório Git');
     return;
   }
@@ -101,17 +101,18 @@ async function createPullRequest(ambiente, options = {}) {
     return;
   }
 
-  const vtexConfig = ambiente === 'qa' ? 
-    { 
-      account: config.QA_ACCOUNT, 
-      appkey: config.VTEX_QA_APPKEY, 
-      apptoken: config.VTEX_QA_APPTOKEN 
-    } :
-    { 
-      account: config.PROD_ACCOUNT, 
-      appkey: config.VTEX_PROD_APPKEY, 
-      apptoken: config.VTEX_PROD_APPTOKEN 
-    };
+  const vtexConfig =
+    ambiente === 'qa'
+      ? {
+          account: config.QA_ACCOUNT,
+          appkey: config.VTEX_QA_APPKEY,
+          apptoken: config.VTEX_QA_APPTOKEN
+        }
+      : {
+          account: config.PROD_ACCOUNT,
+          appkey: config.VTEX_PROD_APPKEY,
+          apptoken: config.VTEX_PROD_APPTOKEN
+        };
 
   if (!vtexConfig.account || !vtexConfig.appkey || !vtexConfig.apptoken) {
     logger.error(`Configuração VTEX para ${ambiente.toUpperCase()} não encontrada`);
@@ -166,17 +167,17 @@ async function createPullRequest(ambiente, options = {}) {
     // 6. Verificar se já existe PR para esta branch
     logger.startSpinner('Verificando PRs existentes...');
     const existingPRs = await bitbucketService.searchPRsByBranch(currentBranch);
-    
+
     if (existingPRs.length > 0) {
       logger.warnSpinner('PR já existe para esta branch');
-      
-      const openPRs = existingPRs.filter(pr => pr.state === 'OPEN');
+
+      const openPRs = existingPRs.filter((pr) => pr.state === 'OPEN');
       if (openPRs.length > 0) {
         logger.warn('PRs abertos encontrados:');
-        openPRs.forEach(pr => {
+        openPRs.forEach((pr) => {
           logger.pullRequest(pr);
         });
-        
+
         const { shouldContinue } = await inquirer.prompt([
           {
             type: 'confirm',
@@ -185,7 +186,7 @@ async function createPullRequest(ambiente, options = {}) {
             default: false
           }
         ]);
-        
+
         if (!shouldContinue) {
           logger.info('Operação cancelada');
           return;
@@ -223,7 +224,7 @@ async function createPullRequest(ambiente, options = {}) {
     if (options.deploy !== false) {
       logger.newLine();
       logger.subtitle('Executando Deploy VTEX');
-      
+
       // Verificar se Docker está rodando
       const dockerStatus = await dockerService.getStatus();
       if (!dockerStatus.running) {
@@ -233,16 +234,21 @@ async function createPullRequest(ambiente, options = {}) {
 
       // Deploy VTEX com geração automática de token
       logger.startSpinner('Iniciando deploy VTEX...');
-      
-      const deploySuccess = ambiente === 'qa' ?
-        await vtexService.deployToQA(vtexConfig.account, vtexConfig.appkey, vtexConfig.apptoken) :
-        await vtexService.deployToProduction(vtexConfig.account, vtexConfig.appkey, vtexConfig.apptoken);
-      
+
+      const deploySuccess =
+        ambiente === 'qa'
+          ? await vtexService.deployToQA(vtexConfig.account, vtexConfig.appkey, vtexConfig.apptoken)
+          : await vtexService.deployToProduction(
+              vtexConfig.account,
+              vtexConfig.appkey,
+              vtexConfig.apptoken
+            );
+
       if (!deploySuccess) {
         logger.error('Erro durante o deploy VTEX');
         return;
       }
-      
+
       logger.succeedSpinner('Deploy VTEX realizado com sucesso');
 
       // Usar workspace
@@ -259,13 +265,14 @@ async function createPullRequest(ambiente, options = {}) {
     }
 
     // 9. Obter informações para o PR
-    const prTitle = options.title || await generatePRTitle(currentBranch, ambiente);
-    const prDescription = options.description || await generatePRDescription(currentBranch, ambiente);
+    const prTitle = options.title || (await generatePRTitle(currentBranch, ambiente));
+    const prDescription =
+      options.description || (await generatePRDescription(currentBranch, ambiente));
 
     // 10. Criar Pull Request
     logger.newLine();
     logger.startSpinner('Criando Pull Request...');
-    
+
     const prData = {
       title: prTitle,
       description: prDescription,
@@ -289,7 +296,6 @@ async function createPullRequest(ambiente, options = {}) {
       'Responda aos comentários se houver',
       `Acompanhe em: ${pr.url}`
     ]);
-
   } catch (error) {
     logger.error('Erro durante a criação do PR:', error);
     throw error;
@@ -338,12 +344,12 @@ async function executeProdDeploy() {
  */
 async function generatePRTitle(branch, ambiente) {
   const envPrefix = ambiente === 'qa' ? '[QA]' : '[PROD]';
-  
+
   if (branch.startsWith('task-')) {
     const taskInfo = branch.replace('task-', '').replace(/-/g, ' ');
     return `${envPrefix} ${taskInfo}`;
   }
-  
+
   return `${envPrefix} ${branch}`;
 }
 
@@ -389,7 +395,7 @@ async function showPRStatus() {
       return;
     }
 
-    if (!await gitService.isGitRepository()) {
+    if (!(await gitService.isGitRepository())) {
       logger.error('Este diretório não é um repositório Git');
       return;
     }
@@ -401,7 +407,7 @@ async function showPRStatus() {
     // Buscar PRs da branch atual
     logger.startSpinner('Buscando Pull Requests...');
     const prs = await bitbucketService.searchPRsByBranch(currentBranch);
-    
+
     if (prs.length === 0) {
       logger.warnSpinner('Nenhum Pull Request encontrado para esta branch');
       return;
@@ -414,18 +420,17 @@ async function showPRStatus() {
     prs.forEach((pr, index) => {
       if (index > 0) logger.separator();
       logger.pullRequest(pr);
-      
+
       // Buscar status de build se disponível
       // TODO: Implementar busca de status de build
     });
 
     // Informações adicionais
-    const openPRs = prs.filter(pr => pr.state === 'OPEN');
+    const openPRs = prs.filter((pr) => pr.state === 'OPEN');
     if (openPRs.length > 0) {
       logger.newLine();
       logger.info(`${openPRs.length} PR(s) aberto(s) aguardando revisão`);
     }
-
   } catch (error) {
     logger.error('Erro ao obter status dos PRs:', error);
   }
@@ -452,9 +457,9 @@ async function listPullRequests(options = {}) {
       state: options.state || 'OPEN',
       author: options.author
     };
-    
+
     const prs = await bitbucketService.listPullRequests(filters);
-    
+
     if (prs.length === 0) {
       logger.warnSpinner('Nenhum Pull Request encontrado');
       return;
@@ -473,15 +478,14 @@ async function listPullRequests(options = {}) {
     // Exibir PRs agrupados
     Object.entries(prsByState).forEach(([state, statePRs]) => {
       logger.subtitle(`${logger.formatPRState(state)} (${statePRs.length})`);
-      
-      statePRs.forEach(pr => {
+
+      statePRs.forEach((pr) => {
         console.log(`  #${pr.id} ${pr.title}`);
         console.log(`    ${chalk.gray(pr.sourceBranch)} → ${chalk.gray(pr.destinationBranch)}`);
         console.log(`    ${chalk.gray('Por:')} ${pr.author} ${chalk.gray('em')} ${pr.createdOn}`);
         console.log();
       });
     });
-
   } catch (error) {
     logger.error('Erro ao listar PRs:', error);
   }
@@ -506,7 +510,7 @@ async function mergePullRequest(prId, options = {}) {
     // Buscar PR
     logger.startSpinner('Buscando Pull Request...');
     const pr = await bitbucketService.getPullRequest(prId);
-    
+
     if (!pr) {
       logger.failSpinner('Pull Request não encontrado');
       return;
@@ -541,14 +545,13 @@ async function mergePullRequest(prId, options = {}) {
     const mergeResult = await bitbucketService.mergePullRequest(prId, {
       closeSourceBranch: options.closeBranch
     });
-    
+
     logger.succeedSpinner('Merge executado com sucesso!');
     logger.success(`PR #${prId} foi merged`);
 
     if (options.closeBranch) {
       logger.info('Branch de origem foi fechada');
     }
-
   } catch (error) {
     logger.error('Erro ao fazer merge do PR:', error);
   }
