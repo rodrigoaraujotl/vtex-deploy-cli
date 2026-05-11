@@ -65,6 +65,72 @@ class EnvUtils {
     return process.env[key] || this.envVars[key] || defaultValue;
   }
 
+
+  /**
+   * Carrega variáveis combinadas de process.env e arquivo .env.
+   * @returns {Object} variáveis disponíveis
+   */
+  loadEnv() {
+    return {
+      ...this.envVars,
+      ...process.env
+    };
+  }
+
+  /**
+   * Obtém a configuração VTEX canônica de um ambiente.
+   * @param {string} environment 'qa' ou 'prod'
+   * @param {Object} config variáveis previamente carregadas (opcional)
+   * @returns {Object} configuração com account, appkey e apptoken
+   */
+  getEnvironmentConfig(environment, config = this.loadEnv()) {
+    const env = String(environment || '').toLowerCase();
+    const envConfigKeys = {
+      qa: {
+        account: 'QA_ACCOUNT',
+        appkey: 'VTEX_QA_APPKEY',
+        apptoken: 'VTEX_QA_APPTOKEN'
+      },
+      prod: {
+        account: 'PROD_ACCOUNT',
+        appkey: 'VTEX_PROD_APPKEY',
+        apptoken: 'VTEX_PROD_APPTOKEN'
+      }
+    };
+
+    const keys = envConfigKeys[env];
+    if (!keys) {
+      return { name: env, account: null, appkey: null, apptoken: null };
+    }
+
+    return {
+      name: env,
+      account: config[keys.account] || null,
+      appkey: config[keys.appkey] || null,
+      apptoken: config[keys.apptoken] || null
+    };
+  }
+
+  /**
+   * Verifica se uma configuração VTEX de ambiente está completa.
+   * @param {Object} environmentConfig configuração do ambiente
+   * @returns {boolean} true se account, appkey e apptoken estão presentes
+   */
+  isEnvironmentConfigured(environmentConfig) {
+    return !!(environmentConfig.account && environmentConfig.appkey && environmentConfig.apptoken);
+  }
+
+  /**
+   * Lista ambientes VTEX configurados.
+   * @param {Object} config variáveis previamente carregadas (opcional)
+   * @returns {Array<Object>} ambientes com configuração completa
+   */
+  getConfiguredEnvironments(config = this.loadEnv()) {
+    return ['qa', 'prod']
+      .map(environment => this.getEnvironmentConfig(environment, config))
+      .filter(environmentConfig => this.isEnvironmentConfigured(environmentConfig));
+  }
+
   /**
    * Verifica se uma variável existe
    * @param {string} key chave da variável
@@ -219,6 +285,38 @@ class EnvUtils {
    */
   getEnvPath() {
     return this.envPath;
+  }
+
+  /**
+   * Carrega e normaliza as variáveis esperadas pelos comandos.
+   * @returns {Object} objeto plano com configuração VTEX e Bitbucket
+   */
+  loadEnv() {
+    this.envVars = {};
+    this.loadEnvFile();
+
+    const config = {
+      ...this.getAllVars(),
+      QA_ACCOUNT: this.get('QA_ACCOUNT'),
+      VTEX_QA_APPKEY: this.get('VTEX_QA_APPKEY'),
+      VTEX_QA_APPTOKEN: this.get('VTEX_QA_APPTOKEN'),
+      PROD_ACCOUNT: this.get('PROD_ACCOUNT'),
+      VTEX_PROD_APPKEY: this.get('VTEX_PROD_APPKEY'),
+      VTEX_PROD_APPTOKEN: this.get('VTEX_PROD_APPTOKEN'),
+      BITBUCKET_WORKSPACE: this.get('BITBUCKET_WORKSPACE'),
+      BITBUCKET_REPOSITORY: this.get('BITBUCKET_REPOSITORY'),
+      BITBUCKET_TOKEN: this.get('BITBUCKET_TOKEN')
+    };
+
+    // Aliases usados por alguns comandos legados.
+    config.QA_APPKEY = config.VTEX_QA_APPKEY;
+    config.QA_APPTOKEN = config.VTEX_QA_APPTOKEN;
+    config.PROD_APPKEY = config.VTEX_PROD_APPKEY;
+    config.PROD_APPTOKEN = config.VTEX_PROD_APPTOKEN;
+    config.VTEX_QA_ACCOUNT = config.QA_ACCOUNT;
+    config.VTEX_PROD_ACCOUNT = config.PROD_ACCOUNT;
+
+    return config;
   }
 
   /**

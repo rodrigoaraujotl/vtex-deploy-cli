@@ -1,10 +1,15 @@
 const simpleGit = require('simple-git');
 const ora = require('ora');
 const chalk = require('chalk');
+const Validators = require('../utils/validators');
 
 class GitService {
   constructor() {
     this.git = simpleGit();
+  }
+
+  validateBranchName(branchName) {
+    Validators.assert(Validators.branchName(branchName));
   }
 
   /**
@@ -16,6 +21,7 @@ class GitService {
     const spinner = ora(`Criando e fazendo checkout da branch ${branchName}...`).start();
     
     try {
+      this.validateBranchName(branchName);
       // Verifica se a branch já existe
       const branches = await this.git.branchLocal();
       
@@ -105,6 +111,8 @@ class GitService {
         return false;
       }
       
+      this.validateBranchName(currentBranch);
+
       // Faz push da branch
       await this.git.push(remote, currentBranch, { '--set-upstream': null });
       
@@ -128,6 +136,7 @@ class GitService {
     
     try {
       if (branch) {
+        this.validateBranchName(branch);
         await this.git.pull(remote, branch);
       } else {
         await this.git.pull();
@@ -170,6 +179,7 @@ class GitService {
    */
   async branchExistsRemotely(branchName, remote = 'origin') {
     try {
+      this.validateBranchName(branchName);
       const branches = await this.git.branch(['-r']);
       const remoteBranchName = `${remote}/${branchName}`;
       return branches.all.includes(remoteBranchName);
@@ -212,6 +222,7 @@ class GitService {
     const spinner = ora(`Fazendo checkout para ${branchName}...`).start();
     
     try {
+      this.validateBranchName(branchName);
       await this.git.checkout(branchName);
       spinner.succeed(`Checkout para ${branchName} realizado com sucesso`);
       return true;

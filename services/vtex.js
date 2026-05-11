@@ -2,6 +2,8 @@ const ora = require('ora');
 const chalk = require('chalk');
 const { httpClient, formatHttpError } = require('./httpClient');
 const dockerService = require('./docker');
+const Validators = require('../utils/validators');
+const logger = require('../utils/logger');
 
 function sanitizeVtexCommand(command) {
   return command.replace(/(--token\s+)(\S+)/gi, '$1[REDACTED]');
@@ -21,8 +23,9 @@ class VtexService {
   }
 
   /**
-   * Executa comando VTEX dentro do container
+   * Executa comando VTEX dentro do container sem montar uma string de shell.
    * @param {string} command comando VTEX a ser executado
+   * @param {Array<string>} args argumentos do comando VTEX
    * @param {string} service nome do serviço Docker (opcional)
    * @returns {Promise<Object>} resultado do comando
    */
@@ -31,7 +34,17 @@ class VtexService {
     const spinner = ora(`Executando: vtex ${safeCommand}`).start();
     
     try {
-      const result = await dockerService.execInContainer(service, `vtex ${command}`);
+      Validators.assert(Validators.dockerService(service));
+
+      if (!command || typeof command !== 'string' || !/^[a-z][a-z-]*$/i.test(command)) {
+        throw new Error('Comando VTEX inválido');
+      }
+
+      if (!Array.isArray(args) || args.some(arg => typeof arg !== 'string')) {
+        throw new Error('Argumentos VTEX devem ser strings');
+      }
+
+      const result = await dockerService.execInContainer(service, 'vtex', [command, ...args]);
       
       if (result.success) {
         spinner.succeed(`Comando vtex ${safeCommand} executado com sucesso`);
@@ -42,6 +55,10 @@ class VtexService {
         console.error(chalk.red('Erro:'), safeError);
         return { success: false, error: safeError };
       }
+
+      spinner.fail(`Erro ao executar ${safeCommandText}`);
+      console.error(chalk.red('Erro:'), logger.redactSensitive(result.error));
+      return { success: false, error: logger.redactSensitive(result.error) };
     } catch (error) {
       spinner.fail(`Erro ao executar vtex ${safeCommand}`);
       const safeError = sanitizeErrorMessage(error.message);
@@ -70,16 +87,19 @@ class VtexService {
         {
           headers: {
             'Content-Type': 'application/json'
-          }
+          },
+          timeout: VTEX_AUTH_TIMEOUT_MS
         }
       );
       
-      if (response.data && response.data.token) {
+      const token = response.data?.token;
+
+      if (typeof token === 'string' && token.length > 0) {
         spinner.succeed(`Token gerado com sucesso para conta ${account}`);
-        return response.data.token;
+        return token;
       } else {
         spinner.fail(`Erro ao gerar token para conta ${account}`);
-        console.error(chalk.red('Resposta inválida da API'));
+        console.error(chalk.red('Resposta inesperada da API de autenticação VTEX'), `(status ${response.status || 'desconhecido'})`);
         return null;
       }
     } catch (error) {
@@ -99,11 +119,14 @@ class VtexService {
     const spinner = ora(`Fazendo login na conta ${account}...`).start();
     
     try {
+      Validators.assert(Validators.vtexAccount(account));
+
       // Primeiro, faz logout para limpar sessão anterior
       await this.execVtexCommand('logout');
       
-      // Faz login com token
-      const result = await this.execVtexCommand(`login ${account} --token ${token}`);
+      // A VTEX CLI usada por este projeto recebe token via --token; portanto o
+      // token é passado como argumento separado e redigido em spinners/logs/erros.
+      const result = await this.execVtexCommand('login', [account, '--token', token]);
       
       if (result.success) {
         spinner.succeed(`Login realizado com sucesso na conta ${account}`);
@@ -125,8 +148,13 @@ class VtexService {
    * @returns {Promise<boolean>} true se sucesso
    */
   async useWorkspace(workspace) {
-    const result = await this.execVtexCommand(`use ${workspace}`);
+    Validators.assert(Validators.vtexWorkspace(workspace));
+    const result = await this.execVtexCommand('use', [workspace]);
     return result.success;
+  }
+
+  async use(workspace) {
+    return this.useWorkspace(workspace);
   }
 
   /**
@@ -162,6 +190,176 @@ class VtexService {
     }
   }
 
+  async link() {
+    return this.linkApp();
+  }
+
+  /**
+   * Alias público para selecionar workspace, usado pelos comandos.
+   * @param {string} workspace nome do workspace
+   * @returns {Promise<boolean>} true se sucesso
+   */
+  async use(workspace) {
+    return this.useWorkspace(workspace);
+  }
+
+  /**
+   * Alias público para linkar a aplicação, usado pelos comandos.
+   * @returns {Promise<Object>} resultado do link
+   */
+  async link() {
+    return this.linkApp();
+  }
+
+  /**
+   * Lista aplicações instaladas no workspace atual.
+   * @returns {Promise<Array<Object>>} aplicações normalizadas
+   */
+  async listApps() {
+    const result = await this.execVtexCommand('list');
+
+    if (!result.success) {
+      return [];
+    }
+
+    return this.parseApps(result.output);
+  }
+
+  /**
+   * Lista workspaces disponíveis na conta atual.
+   * @returns {Promise<Array<Object>>} workspaces normalizados
+   */
+  async listWorkspaces() {
+    const result = await this.execVtexCommand('workspace list');
+
+    if (!result.success) {
+      return [];
+    }
+
+    return this.parseWorkspaces(result.output);
+  }
+
+  /**
+   * Lista versões disponíveis da aplicação atual.
+   * @returns {Promise<Array<Object>>} versões normalizadas
+   */
+  async listVersions() {
+    const result = await this.execVtexCommand('deps list');
+
+    if (!result.success) {
+      return [];
+    }
+
+    return this.parseVersions(result.output);
+  }
+
+  /**
+   * Instala uma versão específica da aplicação.
+   * @param {string} version versão alvo
+   * @returns {Promise<boolean>} true se sucesso
+   */
+  async installVersion(version) {
+    const result = await this.execVtexCommand(`install ${version}`);
+    return result.success;
+  }
+
+  /**
+   * Normaliza saída do vtex list.
+   * @param {string} output saída do comando
+   * @returns {Array<Object>} aplicações
+   */
+  parseApps(output) {
+    return this.parseLines(output)
+      .map(line => {
+        const cleanLine = line.replace(/^[•*-]\s*/, '').trim();
+        const match = cleanLine.match(/^([^\s@]+)@([^\s]+)(.*)$/);
+
+        if (!match) {
+          return null;
+        }
+
+        return {
+          name: match[1],
+          version: match[2],
+          linked: /linked/i.test(match[3] || ''),
+          raw: line
+        };
+      })
+      .filter(Boolean);
+  }
+
+  /**
+   * Normaliza saída do vtex workspace list.
+   * @param {string} output saída do comando
+   * @returns {Array<Object>} workspaces
+   */
+  parseWorkspaces(output) {
+    return this.parseLines(output)
+      .map(line => {
+        const cleanLine = line.replace(/^[*>•-]\s*/, '').trim();
+
+        if (!cleanLine || /^name\b/i.test(cleanLine)) {
+          return null;
+        }
+
+        const [name, ...rest] = cleanLine.split(/\s+/);
+        return {
+          name,
+          current: /^[*>]/.test(line),
+          status: rest.join(' '),
+          raw: line
+        };
+      })
+      .filter(Boolean);
+  }
+
+  /**
+   * Normaliza saída de versões.
+   * @param {string} output saída do comando
+   * @returns {Array<Object>} versões
+   */
+  parseVersions(output) {
+    return this.parseLines(output)
+      .map(line => {
+        const cleanLine = line.replace(/^[•*-]\s*/, '').trim();
+        const versionMatch = cleanLine.match(/(?:@|\b)(\d+\.\d+\.\d+(?:[-+][^\s]+)?)/);
+
+        if (!versionMatch) {
+          return null;
+        }
+
+        return {
+          version: versionMatch[1],
+          date: this.extractDate(cleanLine) || 'N/A',
+          description: cleanLine,
+          raw: line
+        };
+      })
+      .filter(Boolean);
+  }
+
+  /**
+   * Divide saída em linhas úteis.
+   * @param {string} output saída bruta
+   * @returns {Array<string>} linhas úteis
+   */
+  parseLines(output) {
+    return String(output || '')
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !/^[-=]+$/.test(line));
+  }
+
+  /**
+   * Extrai data simples de uma linha.
+   * @param {string} text texto
+   * @returns {string|null} data encontrada
+   */
+  extractDate(text) {
+    const match = text.match(/\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4}/);
+    return match ? match[0] : null;
+  }
+
   /**
    * Executa release da aplicação
    * @returns {Promise<boolean>} true se sucesso
@@ -186,8 +384,18 @@ class VtexService {
    * @returns {Promise<boolean>} true se sucesso
    */
   async install(appName = '') {
-    const command = appName ? `install ${appName}` : 'install';
-    const result = await this.execVtexCommand(command);
+    const args = [];
+    if (appName) {
+      Validators.assert(Validators.vtexAppName(appName));
+      args.push(appName);
+    }
+    const result = await this.execVtexCommand('install', args);
+    return result.success;
+  }
+
+  async installVersion(version) {
+    Validators.assert(Validators.version(version));
+    const result = await this.execVtexCommand('install', [version]);
     return result.success;
   }
 
@@ -198,6 +406,25 @@ class VtexService {
   async deploy() {
     const result = await this.execVtexCommand('deploy');
     return result.success;
+  }
+
+  async listApps() {
+    const result = await this.execVtexCommand('list');
+    if (!result.success) return [];
+    return result.output
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+      .map(line => {
+        const [nameVersion] = line.split(/\s+/);
+        const [name, version] = nameVersion.split('@');
+        return { name, version: version || '' };
+      });
+  }
+
+  async listVersions() {
+    const result = await this.execVtexCommand('deprecate', ['--help']);
+    return result.success ? [] : [];
   }
 
   /**
@@ -270,6 +497,7 @@ class VtexService {
    */
   async deployToQA(account, appkey, apptoken) {
     console.log(chalk.blue('Iniciando deploy para QA...'));
+    Validators.assert(Validators.vtexAccount(account));
     
     // Gera token
     const token = await this.generateToken(account, appkey, apptoken);
@@ -300,6 +528,7 @@ class VtexService {
    */
   async deployToProduction(account, appkey, apptoken) {
     console.log(chalk.blue('Iniciando deploy para Produção...'));
+    Validators.assert(Validators.vtexAccount(account));
     
     // Gera token
     const token = await this.generateToken(account, appkey, apptoken);
@@ -326,4 +555,10 @@ class VtexService {
   }
 }
 
-module.exports = new VtexService();
+const vtexService = new VtexService();
+
+vtexService.VTEX_AUTH_BASE_URL = VTEX_AUTH_BASE_URL;
+vtexService.VTEX_AUTH_TIMEOUT_MS = VTEX_AUTH_TIMEOUT_MS;
+vtexService.buildVtexAuthUrl = buildVtexAuthUrl;
+
+module.exports = vtexService;

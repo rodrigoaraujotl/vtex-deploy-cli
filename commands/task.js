@@ -97,7 +97,8 @@ async function createTask(nome, numero, options = {}) {
 
   // Carregar configuração
   const config = envUtils.loadEnv();
-  if (!config.QA_ACCOUNT || !config.VTEX_QA_APPKEY || !config.VTEX_QA_APPTOKEN) {
+  const vtexConfig = envUtils.getEnvironmentConfig('qa', config);
+  if (!envUtils.isEnvironmentConfigured(vtexConfig)) {
     logger.error('Configuração VTEX não encontrada. Execute: vtex-deploy config:init');
     return;
   }
@@ -179,7 +180,7 @@ async function createTask(nome, numero, options = {}) {
 
     // 7. Executar deploy VTEX para QA
     logger.startSpinner('Iniciando deploy VTEX para QA...');
-    const deploySuccess = await vtexService.deployToQA(config.QA_ACCOUNT, config.VTEX_QA_APPKEY, config.VTEX_QA_APPTOKEN);
+    const deploySuccess = await vtexService.deployToQA(vtexConfig.account, vtexConfig.appkey, vtexConfig.apptoken);
     
     if (!deploySuccess) {
       logger.failSpinner('Erro durante o deploy VTEX');
@@ -273,7 +274,7 @@ async function showTaskStatus() {
 
     // Carregar configuração
     const config = envUtils.loadEnv();
-    if (!config.QA_ACCOUNT) {
+    if (!envUtils.isEnvironmentConfigured(envUtils.getEnvironmentConfig('qa', config))) {
       logger.error('Configuração VTEX não encontrada');
       return;
     }
@@ -449,7 +450,7 @@ async function switchTask(branch) {
     // Se for uma branch de task, configurar ambiente
     if (branch.startsWith('task-')) {
       const config = envUtils.loadEnv();
-      if (config.VTEX_QA_ACCOUNT && config.VTEX_QA_TOKEN) {
+      if (envUtils.isEnvironmentConfigured(envUtils.getEnvironmentConfig('qa', config))) {
         // Verificar se Docker está rodando
         const dockerStatus = await dockerService.getStatus();
         
