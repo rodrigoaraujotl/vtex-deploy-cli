@@ -74,22 +74,22 @@ test('vtexService list and install methods delegate to VTEX commands and normali
   const originalExecVtexCommand = vtexService.execVtexCommand;
   const calls = [];
 
-  vtexService.execVtexCommand = async (command) => {
-    calls.push(command);
+  vtexService.execVtexCommand = async (command, args = []) => {
+    calls.push([command, args]);
 
     if (command === 'list') {
       return { success: true, output: 'vendor.app@1.2.3 linked\nvtex.service@2.0.0 installed' };
     }
 
-    if (command === 'workspace list') {
+    if (command === 'workspace' && JSON.stringify(args) === JSON.stringify(['list'])) {
       return { success: true, output: '* master production\n  dev development' };
     }
 
-    if (command === 'deps list') {
+    if (command === 'deps' && JSON.stringify(args) === JSON.stringify(['list'])) {
       return { success: true, output: 'vendor.app@1.2.3 2026-05-11 stable\nvendor.app@1.2.2 2026-05-10 previous' };
     }
 
-    if (command === 'install vendor.app@1.2.2') {
+    if (command === 'install' && JSON.stringify(args) === JSON.stringify(['vendor.app@1.2.2'])) {
       return { success: true, output: '' };
     }
 
@@ -106,7 +106,7 @@ test('vtexService list and install methods delegate to VTEX commands and normali
     assert.deepStrictEqual(workspaces[0], { name: 'master', current: true, status: 'production', raw: '* master production' });
     assert.strictEqual(versions[0].version, '1.2.3');
     assert.strictEqual(installed, true);
-    assert.deepStrictEqual(calls, ['list', 'workspace list', 'deps list', 'install vendor.app@1.2.2']);
+    assert.deepStrictEqual(calls, [['list', []], ['workspace', ['list']], ['deps', ['list']], ['install', ['vendor.app@1.2.2']]]);
   } finally {
     vtexService.execVtexCommand = originalExecVtexCommand;
   }

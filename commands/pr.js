@@ -23,7 +23,7 @@ function registerPRCommands(program) {
     .option('--json', 'Emite logs estruturados em JSON Lines')
     .action(async (ambiente, options) => {
       await runAction(() => createPullRequest(ambiente, options), 'Erro ao criar Pull Request:');
-    });
+    }));
 
   // Comando pr:status
   program
@@ -80,20 +80,9 @@ async function createPullRequest(ambiente, options = {}) {
     throw new CliError('Configuração Bitbucket não encontrada. Execute: vtex-deploy config:init', 2);
   }
 
-  const vtexConfig =
-    ambiente === 'qa'
-      ? {
-          account: config.QA_ACCOUNT,
-          appkey: config.VTEX_QA_APPKEY,
-          apptoken: config.VTEX_QA_APPTOKEN
-        }
-      : {
-          account: config.PROD_ACCOUNT,
-          appkey: config.VTEX_PROD_APPKEY,
-          apptoken: config.VTEX_PROD_APPTOKEN
-        };
+  const vtexConfig = envUtils.getEnvironmentConfig(ambiente, config);
 
-  if (!vtexConfig.account || !vtexConfig.appkey || !vtexConfig.apptoken) {
+  if (!envUtils.isEnvironmentConfigured(vtexConfig)) {
     throw new CliError(`Configuração VTEX para ${ambiente.toUpperCase()} não encontrada`, 2);
   }
 

@@ -76,7 +76,7 @@ VTEX_QA_APPTOKEN=${answers.qaApptoken}
 VTEX_PROD_APPKEY=${answers.prodAppkey}
 VTEX_PROD_APPTOKEN=${answers.prodApptoken}
 BITBUCKET_WORKSPACE=${answers.bitbucketWorkspace}
-BITBUCKET_REPO=${answers.bitbucketRepo}
+BITBUCKET_REPOSITORY=${answers.bitbucketRepo}
 BITBUCKET_TOKEN=${answers.bitbucketToken}
 `.trim();
 

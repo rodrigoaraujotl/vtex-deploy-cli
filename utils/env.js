@@ -164,7 +164,7 @@ class EnvUtils {
   getBitbucketConfig() {
     return {
       workspace: this.get('BITBUCKET_WORKSPACE'),
-      repository: this.get('BITBUCKET_REPOSITORY'),
+      repository: this.get('BITBUCKET_REPOSITORY') || this.get('BITBUCKET_REPO'),
       token: this.get('BITBUCKET_TOKEN')
     };
   }
@@ -314,7 +314,7 @@ class EnvUtils {
       VTEX_PROD_APPKEY: this.get('VTEX_PROD_APPKEY'),
       VTEX_PROD_APPTOKEN: this.get('VTEX_PROD_APPTOKEN'),
       BITBUCKET_WORKSPACE: this.get('BITBUCKET_WORKSPACE'),
-      BITBUCKET_REPOSITORY: this.get('BITBUCKET_REPOSITORY'),
+      BITBUCKET_REPOSITORY: this.get('BITBUCKET_REPOSITORY') || this.get('BITBUCKET_REPO'),
       BITBUCKET_TOKEN: this.get('BITBUCKET_TOKEN')
     };
 

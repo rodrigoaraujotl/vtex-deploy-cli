@@ -1,4 +1,5 @@
-const { httpClient, formatHttpError } = require('./httpClient');
+const axios = require('axios');
+const { formatHttpError } = require('./httpClient');
 const ora = require('ora');
 const chalk = require('chalk');
 
@@ -16,8 +17,15 @@ class BitbucketService {
    * @param {string} workspace workspace do Bitbucket
    * @param {string} repository nome do repositório
    */
-  configure(token, workspace, repository) {
-    this.token = token;
+  configure(tokenOrConfig, workspace, repository) {
+    if (tokenOrConfig && typeof tokenOrConfig === 'object') {
+      this.token = tokenOrConfig.token;
+      this.workspace = tokenOrConfig.workspace;
+      this.repository = tokenOrConfig.repository;
+      return;
+    }
+
+    this.token = tokenOrConfig;
     this.workspace = workspace;
     this.repository = repository;
   }
@@ -285,11 +293,49 @@ class BitbucketService {
     }
   }
 
+
+
+  async searchPRsByBranch(branchName, filters = {}) {
+    return this.listPullRequests({ ...filters, sourceBranch: branchName });
+  }
+
+  async searchPullRequestsByBranch(branchName, filters = {}) {
+    return this.searchPRsByBranch(branchName, filters);
+  }
+
+  async getBuildStatus(prId) {
+    return this.getBuildStatuses(prId);
+  }
+
+  async mergePullRequest(prId, options = {}) {
+    try {
+      if (!this.workspace || !this.repository) {
+        throw new Error('Workspace ou repositório não configurados');
+      }
+
+      const url = `${this.baseUrl}/repositories/${this.workspace}/${this.repository}/pullrequests/${prId}/merge`;
+      const response = await axios.post(
+        url,
+        { close_source_branch: Boolean(options.closeSourceBranch) },
+        { headers: this.getAuthHeaders() }
+      );
+
+      return { success: true, pr: response.data };
+    } catch (error) {
+      console.error(chalk.red(`Erro ao fazer merge do PR ${prId}:`), formatHttpError(error, 'Não foi possível fazer merge do Pull Request.'));
+      return { success: false, error: error.message };
+    }
+  }
+
   /**
    * Verifica se as credenciais estão configuradas
    * @returns {boolean} true se configurado
    */
-  isConfigured() {
+  isConfigured(config = null) {
+    if (config) {
+      return !!(config.BITBUCKET_TOKEN && config.BITBUCKET_WORKSPACE && config.BITBUCKET_REPOSITORY);
+    }
+
     return !!(this.token && this.workspace && this.repository);
   }
 

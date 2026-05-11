@@ -97,7 +97,7 @@ class DockerService {
    */
   async listContainers() {
     try {
-      const { stdout } = await execAsync('docker-compose ps --format json');
+      const { stdout } = await this.runCompose(['ps', '--format', 'json']);
       return this.parseComposePs(stdout);
     } catch (error) {
       console.error(chalk.red('Erro ao listar containers:'), error.message);
@@ -112,10 +112,13 @@ class DockerService {
    */
   async getLogs(options = {}) {
     const lines = Number.isInteger(options.lines) ? options.lines : parseInt(options.lines, 10) || 50;
-    const follow = options.follow ? '--follow' : '';
+    const args = ['logs', `--tail=${lines}`];
+    if (options.follow) {
+      args.push('--follow');
+    }
 
     try {
-      const { stdout } = await execAsync(`docker-compose logs --tail=${lines} ${follow}`.trim());
+      const { stdout } = await this.runCompose(args);
       return stdout.split('\n').filter(line => line.length > 0);
     } catch (error) {
       console.error(chalk.red('Erro ao obter logs dos containers:'), error.message);
@@ -173,9 +176,7 @@ class DockerService {
 
     while (Date.now() - startTime < maxWaitTime) {
       try {
-        const { stdout } = await execAsync(
-          'docker-compose ps --services --filter "status=running"'
-        );
+        const { stdout } = await this.runCompose(['ps', '--services', '--filter', 'status=running']);
         const runningServices = stdout
           .trim()
           .split('\n')

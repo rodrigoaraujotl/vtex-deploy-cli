@@ -1,13 +1,16 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const axios = require('axios');
 const { freshRequire, mockRequire } = require('../test-helpers');
 
 const vtexPath = require.resolve('../../services/vtex');
 
 test('services/vtex executes commands through the Docker service', async () => {
+  let captured;
   const dockerMock = {
-    execInContainer: async (_service, command) => ({ success: true, stdout: `${command} ok` })
+    execInContainer: async (service, command, args) => {
+      captured = { service, command, args };
+      return { success: true, stdout: `${command} ${args.join(' ')} ok` };
+    }
   };
   const restoreDocker = mockRequire(require.resolve('../../services/docker'), dockerMock);
   const vtex = freshRequire(vtexPath);
@@ -16,13 +19,16 @@ test('services/vtex executes commands through the Docker service', async () => {
     success: true,
     output: 'vtex whoami ok'
   });
+  assert.deepEqual(captured, { service: 'app', command: 'vtex', args: ['whoami'] });
   assert.equal(await vtex.useWorkspace('task-1'), true);
   restoreDocker();
 });
 
 test('services/vtex generates tokens and parses CLI output', async () => {
-  const originalPost = axios.post;
-  axios.post = async () => ({ data: { token: 'vtex-token' } });
+  const restoreHttp = mockRequire(require.resolve('../../services/httpClient'), {
+    httpClient: { post: async () => ({ data: { token: 'vtex-token' } }) },
+    formatHttpError: (_error, message) => message
+  });
   const restoreDocker = mockRequire(require.resolve('../../services/docker'), {
     execInContainer: async () => ({
       success: true,
@@ -45,7 +51,7 @@ test('services/vtex generates tokens and parses CLI output', async () => {
     }
   );
 
-  axios.post = originalPost;
+  restoreHttp();
   restoreDocker();
 });
 

@@ -35,6 +35,7 @@ function createMockLogger() {
     error: record('error'),
     success: record('success'),
     debug: record('debug'),
+    structured: record('structured'),
     startSpinner: record('startSpinner'),
     succeedSpinner: record('succeedSpinner'),
     failSpinner: record('failSpinner'),

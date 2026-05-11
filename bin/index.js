@@ -7,13 +7,14 @@ const PrCommand = require('../commands/pr');
 const DeployCommand = require('../commands/deploy');
 const StatusCommand = require('../commands/status');
 const logger = require('../utils/logger');
+const { version } = require('../package.json');
 
 const program = new Command();
 
 program
   .name('vtex-deploy')
   .description('CLI para automatizar o fluxo de deploy de aplicações VTEX IO')
-  .version('1.0.0')
+  .version(version)
   .option('--json', 'Emite logs estruturados em JSON Lines');
 
 // Registrar comandos

@@ -74,7 +74,8 @@ async function createTask(nome, numero, options = {}) {
 
   // Carregar configuração
   const config = envUtils.loadEnv();
-  if (!config.QA_ACCOUNT || !config.VTEX_QA_APPKEY || !config.VTEX_QA_APPTOKEN) {
+  const qaConfig = envUtils.getEnvironmentConfig('qa', config);
+  if (!envUtils.isEnvironmentConfigured(qaConfig)) {
     throw new CliError('Configuração VTEX não encontrada. Execute: vtex-deploy config:init', 2);
   }
 
@@ -156,9 +157,9 @@ async function createTask(nome, numero, options = {}) {
     // 7. Executar deploy VTEX para QA
     logger.startSpinner('Iniciando deploy VTEX para QA...');
     const deploySuccess = await vtexService.deployToQA(
-      config.QA_ACCOUNT,
-      config.VTEX_QA_APPKEY,
-      config.VTEX_QA_APPTOKEN
+      qaConfig.account,
+      qaConfig.appkey,
+      qaConfig.apptoken
     );
 
     if (!deploySuccess) {
