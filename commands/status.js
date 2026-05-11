@@ -358,25 +358,7 @@ async function showWorkspaceStatus(options = {}) {
     }
 
     // Ambientes a verificar
-    const environments = [];
-    
-    if (config.QA_ACCOUNT && config.QA_APPKEY && config.QA_APPTOKEN) {
-      environments.push({ 
-        name: 'qa', 
-        account: config.QA_ACCOUNT, 
-        appkey: config.QA_APPKEY, 
-        apptoken: config.QA_APPTOKEN 
-      });
-    }
-    
-    if (config.PROD_ACCOUNT && config.PROD_APPKEY && config.PROD_APPTOKEN) {
-      environments.push({ 
-        name: 'prod', 
-        account: config.PROD_ACCOUNT, 
-        appkey: config.PROD_APPKEY, 
-        apptoken: config.PROD_APPTOKEN 
-      });
-    }
+    const environments = envUtils.getConfiguredEnvironments(config);
 
     if (environments.length === 0) {
       logger.error('Nenhuma configuração VTEX encontrada. Execute: vtex-deploy config:init');
@@ -394,7 +376,7 @@ async function showWorkspaceStatus(options = {}) {
       try {
         // Login com geração automática de token
         logger.startSpinner(`Conectando ao ${env.name.toUpperCase()}...`);
-        const token = await vtexService.generateToken(env.appkey, env.apptoken);
+        const token = await vtexService.generateToken(env.account, env.appkey, env.apptoken);
         await vtexService.login(env.account, token);
         logger.succeedSpinner('Conectado');
         
@@ -471,15 +453,7 @@ function parseTaskBranch(branchName) {
  * @param {Object} options opções
  */
 async function showVTEXStatus(config, options = {}) {
-  const environments = [];
-  
-  if (config.QA_ACCOUNT && config.QA_APPKEY && config.QA_APPTOKEN) {
-    environments.push({ name: 'qa', account: config.QA_ACCOUNT, appkey: config.QA_APPKEY, apptoken: config.QA_APPTOKEN });
-  }
-  
-  if (config.PROD_ACCOUNT && config.PROD_APPKEY && config.PROD_APPTOKEN) {
-    environments.push({ name: 'prod', account: config.PROD_ACCOUNT, appkey: config.PROD_APPKEY, apptoken: config.PROD_APPTOKEN });
-  }
+  const environments = envUtils.getConfiguredEnvironments(config);
 
   if (environments.length === 0) {
     logger.warn('Configuração VTEX não encontrada');
@@ -492,7 +466,7 @@ async function showVTEXStatus(config, options = {}) {
     }
 
     try {
-      const token = await vtexService.generateToken(env.appkey, env.apptoken);
+      const token = await vtexService.generateToken(env.account, env.appkey, env.apptoken);
       await vtexService.login(env.account, token);
       const workspaceInfo = await vtexService.getWorkspaceInfo();
       
@@ -522,11 +496,11 @@ function generateTaskSuggestions(config, dockerStatus) {
     suggestions.push('Inicie o Docker: docker-compose up -d');
   }
   
-  if (!config.QA_ACCOUNT || !config.QA_APPKEY || !config.QA_APPTOKEN) {
+  if (!envUtils.isEnvironmentConfigured(envUtils.getEnvironmentConfig('qa', config))) {
     suggestions.push('Configure VTEX: vtex-deploy config:init');
   }
   
-  if (dockerStatus.running && config.QA_ACCOUNT) {
+  if (dockerStatus.running && envUtils.isEnvironmentConfigured(envUtils.getEnvironmentConfig('qa', config))) {
     suggestions.push('Faça link da aplicação: vtex-deploy task:create <nome> <numero>');
     suggestions.push('Verifique PRs: vtex-deploy pr:status');
   }
@@ -554,8 +528,8 @@ function calculatePRStats(prs) {
  */
 function validateConfiguration(config) {
   return {
-    'VTEX QA': (config.QA_ACCOUNT && config.QA_APPKEY && config.QA_APPTOKEN) ? chalk.green('Configurado') : chalk.red('Não configurado'),
-    'VTEX Prod': (config.PROD_ACCOUNT && config.PROD_APPKEY && config.PROD_APPTOKEN) ? chalk.green('Configurado') : chalk.red('Não configurado'),
+    'VTEX QA': (envUtils.isEnvironmentConfigured(envUtils.getEnvironmentConfig('qa', config))) ? chalk.green('Configurado') : chalk.red('Não configurado'),
+    'VTEX Prod': (envUtils.isEnvironmentConfigured(envUtils.getEnvironmentConfig('prod', config))) ? chalk.green('Configurado') : chalk.red('Não configurado'),
     'Bitbucket': bitbucketService.isConfigured(config) ? chalk.green('Configurado') : chalk.red('Não configurado')
   };
 }
@@ -584,8 +558,8 @@ async function showGitSummary() {
  * @param {Object} config configuração
  */
 async function showVTEXSummary(config) {
-  const hasQA = config.QA_ACCOUNT && config.QA_APPKEY && config.QA_APPTOKEN;
-  const hasProd = config.PROD_ACCOUNT && config.PROD_APPKEY && config.PROD_APPTOKEN;
+  const hasQA = envUtils.isEnvironmentConfigured(envUtils.getEnvironmentConfig('qa', config));
+  const hasProd = envUtils.isEnvironmentConfigured(envUtils.getEnvironmentConfig('prod', config));
   
   logger.status({
     'QA configurado': hasQA ? chalk.green('Sim') : chalk.red('Não'),
@@ -629,7 +603,7 @@ async function showBitbucketSummary(config) {
 function generateRecommendations(config, options) {
   const recommendations = [];
   
-  if (!config.QA_ACCOUNT || !config.QA_APPKEY || !config.QA_APPTOKEN) {
+  if (!envUtils.isEnvironmentConfigured(envUtils.getEnvironmentConfig('qa', config))) {
     recommendations.push('Configure VTEX: vtex-deploy config:init');
   }
   
@@ -637,7 +611,7 @@ function generateRecommendations(config, options) {
     recommendations.push('Configure Bitbucket: vtex-deploy config:init');
   }
   
-  if (config.QA_ACCOUNT && config.QA_APPKEY && config.QA_APPTOKEN && bitbucketService.isConfigured(config)) {
+  if (envUtils.isEnvironmentConfigured(envUtils.getEnvironmentConfig('qa', config)) && bitbucketService.isConfigured(config)) {
     recommendations.push('Crie uma nova task: vtex-deploy task:create <nome> <numero>');
     recommendations.push('Verifique PRs: vtex-deploy pr:status');
   }
