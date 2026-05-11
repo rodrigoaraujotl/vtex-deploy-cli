@@ -101,17 +101,7 @@ async function createPullRequest(ambiente, options = {}) {
     return;
   }
 
-  const vtexConfig = ambiente === 'qa' ? 
-    { 
-      account: config.QA_ACCOUNT, 
-      appkey: config.VTEX_QA_APPKEY, 
-      apptoken: config.VTEX_QA_APPTOKEN 
-    } :
-    { 
-      account: config.PROD_ACCOUNT, 
-      appkey: config.VTEX_PROD_APPKEY, 
-      apptoken: config.VTEX_PROD_APPTOKEN 
-    };
+  const vtexConfig = envUtils.getEnvironmentConfig(ambiente, config);
 
   if (!vtexConfig.account || !vtexConfig.appkey || !vtexConfig.apptoken) {
     logger.error(`Configuração VTEX para ${ambiente.toUpperCase()} não encontrada`);
