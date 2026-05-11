@@ -2,6 +2,7 @@
 
 const { Command } = require('commander');
 const chalk = require('chalk');
+const pkg = require('../package.json');
 const ConfigCommand = require('../commands/config');
 const TaskCommand = require('../commands/task');
 const PrCommand = require('../commands/pr');
@@ -13,7 +14,7 @@ const program = new Command();
 program
   .name('vtex-deploy')
   .description('CLI para automatizar o fluxo de deploy de aplicações VTEX IO')
-  .version('1.0.0');
+  .version(pkg.version);
 
 // Registrar comandos
 ConfigCommand(program);

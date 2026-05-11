@@ -89,6 +89,10 @@ A CLI utiliza o sistema de appkey/apptoken da VTEX para autenticação:
 3. Crie uma nova chave de aplicação
 4. Copie o AppKey e AppToken gerados
 
+## 🔖 Versão da CLI
+
+A versão exibida por `vtex-deploy --version` é controlada pelo campo `version` do `package.json`. Para publicar ou validar uma nova versão da CLI, atualize esse campo no `package.json`; o comando de versão usará esse valor automaticamente.
+
 ## 📚 Comandos Disponíveis
 
 ### 🔧 Configuração
