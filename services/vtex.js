@@ -151,6 +151,172 @@ class VtexService {
   }
 
   /**
+   * Alias público para selecionar workspace, usado pelos comandos.
+   * @param {string} workspace nome do workspace
+   * @returns {Promise<boolean>} true se sucesso
+   */
+  async use(workspace) {
+    return this.useWorkspace(workspace);
+  }
+
+  /**
+   * Alias público para linkar a aplicação, usado pelos comandos.
+   * @returns {Promise<Object>} resultado do link
+   */
+  async link() {
+    return this.linkApp();
+  }
+
+  /**
+   * Lista aplicações instaladas no workspace atual.
+   * @returns {Promise<Array<Object>>} aplicações normalizadas
+   */
+  async listApps() {
+    const result = await this.execVtexCommand('list');
+
+    if (!result.success) {
+      return [];
+    }
+
+    return this.parseApps(result.output);
+  }
+
+  /**
+   * Lista workspaces disponíveis na conta atual.
+   * @returns {Promise<Array<Object>>} workspaces normalizados
+   */
+  async listWorkspaces() {
+    const result = await this.execVtexCommand('workspace list');
+
+    if (!result.success) {
+      return [];
+    }
+
+    return this.parseWorkspaces(result.output);
+  }
+
+  /**
+   * Lista versões disponíveis da aplicação atual.
+   * @returns {Promise<Array<Object>>} versões normalizadas
+   */
+  async listVersions() {
+    const result = await this.execVtexCommand('deps list');
+
+    if (!result.success) {
+      return [];
+    }
+
+    return this.parseVersions(result.output);
+  }
+
+  /**
+   * Instala uma versão específica da aplicação.
+   * @param {string} version versão alvo
+   * @returns {Promise<boolean>} true se sucesso
+   */
+  async installVersion(version) {
+    const result = await this.execVtexCommand(`install ${version}`);
+    return result.success;
+  }
+
+  /**
+   * Normaliza saída do vtex list.
+   * @param {string} output saída do comando
+   * @returns {Array<Object>} aplicações
+   */
+  parseApps(output) {
+    return this.parseLines(output)
+      .map(line => {
+        const cleanLine = line.replace(/^[•*-]\s*/, '').trim();
+        const match = cleanLine.match(/^([^\s@]+)@([^\s]+)(.*)$/);
+
+        if (!match) {
+          return null;
+        }
+
+        return {
+          name: match[1],
+          version: match[2],
+          linked: /linked/i.test(match[3] || ''),
+          raw: line
+        };
+      })
+      .filter(Boolean);
+  }
+
+  /**
+   * Normaliza saída do vtex workspace list.
+   * @param {string} output saída do comando
+   * @returns {Array<Object>} workspaces
+   */
+  parseWorkspaces(output) {
+    return this.parseLines(output)
+      .map(line => {
+        const cleanLine = line.replace(/^[*>•-]\s*/, '').trim();
+
+        if (!cleanLine || /^name\b/i.test(cleanLine)) {
+          return null;
+        }
+
+        const [name, ...rest] = cleanLine.split(/\s+/);
+        return {
+          name,
+          current: /^[*>]/.test(line),
+          status: rest.join(' '),
+          raw: line
+        };
+      })
+      .filter(Boolean);
+  }
+
+  /**
+   * Normaliza saída de versões.
+   * @param {string} output saída do comando
+   * @returns {Array<Object>} versões
+   */
+  parseVersions(output) {
+    return this.parseLines(output)
+      .map(line => {
+        const cleanLine = line.replace(/^[•*-]\s*/, '').trim();
+        const versionMatch = cleanLine.match(/(?:@|\b)(\d+\.\d+\.\d+(?:[-+][^\s]+)?)/);
+
+        if (!versionMatch) {
+          return null;
+        }
+
+        return {
+          version: versionMatch[1],
+          date: this.extractDate(cleanLine) || 'N/A',
+          description: cleanLine,
+          raw: line
+        };
+      })
+      .filter(Boolean);
+  }
+
+  /**
+   * Divide saída em linhas úteis.
+   * @param {string} output saída bruta
+   * @returns {Array<string>} linhas úteis
+   */
+  parseLines(output) {
+    return String(output || '')
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !/^[-=]+$/.test(line));
+  }
+
+  /**
+   * Extrai data simples de uma linha.
+   * @param {string} text texto
+   * @returns {string|null} data encontrada
+   */
+  extractDate(text) {
+    const match = text.match(/\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4}/);
+    return match ? match[0] : null;
+  }
+
+  /**
    * Executa release da aplicação
    * @returns {Promise<boolean>} true se sucesso
    */
