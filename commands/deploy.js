@@ -447,7 +447,7 @@ async function rollbackDeploy(ambiente, options = {}) {
         ? { account: config.VTEX_QA_ACCOUNT, token: config.VTEX_QA_TOKEN }
         : { account: config.VTEX_PROD_ACCOUNT, token: config.VTEX_PROD_TOKEN };
 
-    if (!vtexConfig.account || !vtexConfig.token) {
+    if (!vtexConfig.account || !vtexConfig.appkey || !vtexConfig.apptoken) {
       logger.error(`Configuração VTEX para ${ambiente.toUpperCase()} não encontrada`);
       return;
     }
@@ -461,7 +461,8 @@ async function rollbackDeploy(ambiente, options = {}) {
 
     // Login VTEX
     logger.startSpinner('Fazendo login no VTEX...');
-    await vtexService.login(vtexConfig.account, vtexConfig.token);
+    const token = await vtexService.generateToken(vtexConfig.account, vtexConfig.appkey, vtexConfig.apptoken);
+    await vtexService.login(vtexConfig.account, token);
     logger.succeedSpinner('Login realizado');
 
     // Listar versões disponíveis

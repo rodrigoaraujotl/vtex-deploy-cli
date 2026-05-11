@@ -51,7 +51,7 @@ Este comando irá:
 - Gerar arquivo `.env` com todas as variáveis necessárias
 - Instruir para adicionar `.env` ao `.gitignore` (se necessário)
 
-**Nota:** A CLI agora usa appkey/apptoken em vez de tokens diretos. Os tokens VTEX são gerados automaticamente quando necessário usando a API oficial da VTEX.
+**Nota:** A CLI agora usa appkey/apptoken em vez de tokens diretos. Os tokens VTEX são gerados automaticamente quando necessário usando a API oficial da VTEX por HTTPS.
 
 ### Variáveis de Ambiente
 
@@ -80,7 +80,7 @@ A CLI utiliza o sistema de appkey/apptoken da VTEX para autenticação:
 
 1. **AppKey e AppToken**: Credenciais permanentes que não expiram
 2. **Geração Automática de Tokens**: A CLI gera automaticamente tokens temporários quando necessário
-3. **API Oficial**: Utiliza a API oficial da VTEX para geração de tokens: `http://api.vtexcommercestable.com.br/api/vtexid/apptoken/login`
+3. **API Oficial via HTTPS**: Utiliza a API oficial da VTEX para geração de tokens com base segura `https://api.vtexcommercestable.com.br` e endpoint `https://api.vtexcommercestable.com.br/api/vtexid/apptoken/login`. A conta VTEX é enviada no parâmetro de query `an`.
 
 **Como obter AppKey e AppToken:**
 

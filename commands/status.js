@@ -394,7 +394,7 @@ async function showWorkspaceStatus(options = {}) {
       try {
         // Login com geração automática de token
         logger.startSpinner(`Conectando ao ${env.name.toUpperCase()}...`);
-        const token = await vtexService.generateToken(env.appkey, env.apptoken);
+        const token = await vtexService.generateToken(env.account, env.appkey, env.apptoken);
         await vtexService.login(env.account, token);
         logger.succeedSpinner('Conectado');
 
@@ -503,7 +503,7 @@ async function showVTEXStatus(config, options = {}) {
     }
 
     try {
-      const token = await vtexService.generateToken(env.appkey, env.apptoken);
+      const token = await vtexService.generateToken(env.account, env.appkey, env.apptoken);
       await vtexService.login(env.account, token);
       const workspaceInfo = await vtexService.getWorkspaceInfo();
 
