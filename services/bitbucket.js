@@ -1,4 +1,4 @@
-const axios = require('axios');
+const { httpClient, formatHttpError } = require('./httpClient');
 const ora = require('ora');
 const chalk = require('chalk');
 
@@ -71,7 +71,7 @@ class BitbucketService {
         close_source_branch: false
       };
       
-      const response = await axios.post(url, payload, {
+      const response = await httpClient.post(url, payload, {
         headers: this.getAuthHeaders()
       });
       
@@ -89,18 +89,15 @@ class BitbucketService {
     } catch (error) {
       spinner.fail('Erro ao criar Pull Request');
       
-      if (error.response) {
-        console.error(chalk.red('Erro da API:'), error.response.data.error?.message || error.response.statusText);
-        
-        // Verifica se é erro de branch já existente
-        if (error.response.status === 400 && error.response.data.error?.message?.includes('already exists')) {
-          console.log(chalk.yellow('Dica: Pode ser que já exista um PR para esta branch'));
-        }
-      } else {
-        console.error(chalk.red('Erro:'), error.message);
+      const userMessage = formatHttpError(error, 'Erro ao criar Pull Request.');
+      console.error(chalk.red('Erro:'), userMessage);
+      
+      // Verifica se é erro de branch já existente sem exibir payloads da API
+      if (error.response?.status === 400 && error.response.data?.error?.message?.includes('already exists')) {
+        console.log(chalk.yellow('Dica: Pode ser que já exista um PR para esta branch'));
       }
       
-      return { success: false, error: error.message };
+      return { success: false, error: userMessage };
     }
   }
 
@@ -126,14 +123,14 @@ class BitbucketService {
         params.q = `source.branch.name="${filters.sourceBranch}"`;
       }
       
-      const response = await axios.get(url, {
+      const response = await httpClient.get(url, {
         headers: this.getAuthHeaders(),
         params
       });
       
       return response.data.values || [];
     } catch (error) {
-      console.error(chalk.red('Erro ao listar Pull Requests:'), error.message);
+      console.error(chalk.red('Erro ao listar Pull Requests:'), formatHttpError(error, 'Não foi possível listar Pull Requests.'));
       return [];
     }
   }
@@ -151,13 +148,13 @@ class BitbucketService {
       
       const url = `${this.baseUrl}/repositories/${this.workspace}/${this.repository}/pullrequests/${prId}`;
       
-      const response = await axios.get(url, {
+      const response = await httpClient.get(url, {
         headers: this.getAuthHeaders()
       });
       
       return response.data;
     } catch (error) {
-      console.error(chalk.red(`Erro ao obter PR ${prId}:`), error.message);
+      console.error(chalk.red(`Erro ao obter PR ${prId}:`), formatHttpError(error, 'Não foi possível obter o Pull Request.'));
       return null;
     }
   }
@@ -172,7 +169,7 @@ class BitbucketService {
       const prs = await this.listPullRequests({ sourceBranch: branchName });
       return prs;
     } catch (error) {
-      console.error(chalk.red(`Erro ao buscar PRs da branch ${branchName}:`), error.message);
+      console.error(chalk.red(`Erro ao buscar PRs da branch ${branchName}:`), formatHttpError(error, 'Não foi possível buscar Pull Requests da branch.'));
       return [];
     }
   }
@@ -188,7 +185,7 @@ class BitbucketService {
       const openPr = prs.find(pr => pr.state === 'OPEN');
       return openPr || null;
     } catch (error) {
-      console.error(chalk.red(`Erro ao verificar PR da branch ${branchName}:`), error.message);
+      console.error(chalk.red(`Erro ao verificar PR da branch ${branchName}:`), formatHttpError(error, 'Não foi possível verificar o Pull Request da branch.'));
       return null;
     }
   }
@@ -209,7 +206,7 @@ class BitbucketService {
       
       const url = `${this.baseUrl}/repositories/${this.workspace}/${this.repository}/pullrequests/${prId}`;
       
-      await axios.put(url, updateData, {
+      await httpClient.put(url, updateData, {
         headers: this.getAuthHeaders()
       });
       
@@ -217,7 +214,7 @@ class BitbucketService {
       return true;
     } catch (error) {
       spinner.fail(`Erro ao atualizar Pull Request ${prId}`);
-      console.error(chalk.red('Erro:'), error.message);
+      console.error(chalk.red('Erro:'), formatHttpError(error, 'Não foi possível atualizar o Pull Request.'));
       return false;
     }
   }
@@ -236,7 +233,7 @@ class BitbucketService {
       
       const url = `${this.baseUrl}/repositories/${this.workspace}/${this.repository}/pullrequests/${prId}/comments`;
       
-      await axios.post(url, {
+      await httpClient.post(url, {
         content: {
           raw: comment
         }
@@ -246,7 +243,7 @@ class BitbucketService {
       
       return true;
     } catch (error) {
-      console.error(chalk.red(`Erro ao adicionar comentário ao PR ${prId}:`), error.message);
+      console.error(chalk.red(`Erro ao adicionar comentário ao PR ${prId}:`), formatHttpError(error, 'Não foi possível adicionar o comentário.'));
       return false;
     }
   }
@@ -264,13 +261,13 @@ class BitbucketService {
       
       const url = `${this.baseUrl}/repositories/${this.workspace}/${this.repository}/pullrequests/${prId}/statuses`;
       
-      const response = await axios.get(url, {
+      const response = await httpClient.get(url, {
         headers: this.getAuthHeaders()
       });
       
       return response.data.values || [];
     } catch (error) {
-      console.error(chalk.red(`Erro ao obter status de builds do PR ${prId}:`), error.message);
+      console.error(chalk.red(`Erro ao obter status de builds do PR ${prId}:`), formatHttpError(error, 'Não foi possível obter os status de build.'));
       return [];
     }
   }
@@ -297,7 +294,7 @@ class BitbucketService {
       
       const url = `${this.baseUrl}/repositories/${this.workspace}/${this.repository}`;
       
-      await axios.get(url, {
+      await httpClient.get(url, {
         headers: this.getAuthHeaders()
       });
       
@@ -305,7 +302,7 @@ class BitbucketService {
       return true;
     } catch (error) {
       spinner.fail('Erro na conexão com Bitbucket');
-      console.error(chalk.red('Erro:'), error.message);
+      console.error(chalk.red('Erro:'), formatHttpError(error, 'Não foi possível conectar ao Bitbucket.'));
       return false;
     }
   }

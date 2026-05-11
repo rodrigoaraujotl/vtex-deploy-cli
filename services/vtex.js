@@ -1,18 +1,20 @@
 const ora = require('ora');
 const chalk = require('chalk');
-const axios = require('axios');
+const { httpClient, formatHttpError } = require('./httpClient');
 const dockerService = require('./docker');
 const Validators = require('../utils/validators');
 const logger = require('../utils/logger');
 
-const VTEX_AUTH_BASE_URL = 'https://api.vtexcommercestable.com.br';
-const VTEX_AUTH_TOKEN_PATH = '/api/vtexid/apptoken/login';
-const VTEX_AUTH_TIMEOUT_MS = 10000;
+function sanitizeVtexCommand(command) {
+  return command.replace(/(--token\s+)(\S+)/gi, '$1[REDACTED]');
+}
 
-function buildVtexAuthUrl(account) {
-  const url = new URL(VTEX_AUTH_TOKEN_PATH, VTEX_AUTH_BASE_URL);
-  url.searchParams.set('an', account);
-  return url.toString();
+function sanitizeErrorMessage(message) {
+  if (!message) {
+    return message;
+  }
+
+  return sanitizeVtexCommand(message);
 }
 
 class VtexService {
@@ -27,10 +29,9 @@ class VtexService {
    * @param {string} service nome do serviço Docker (opcional)
    * @returns {Promise<Object>} resultado do comando
    */
-  async execVtexCommand(command, args = [], service = this.defaultService) {
-    const commandText = `vtex ${[command, ...args].join(' ')}`.trim();
-    const safeCommandText = logger.redactSensitive(commandText);
-    const spinner = ora(`Executando: ${safeCommandText}`).start();
+  async execVtexCommand(command, service = this.defaultService) {
+    const safeCommand = sanitizeVtexCommand(command);
+    const spinner = ora(`Executando: vtex ${safeCommand}`).start();
     
     try {
       Validators.assert(Validators.dockerService(service));
@@ -46,17 +47,23 @@ class VtexService {
       const result = await dockerService.execInContainer(service, 'vtex', [command, ...args]);
       
       if (result.success) {
-        spinner.succeed(`Comando ${safeCommandText} executado com sucesso`);
+        spinner.succeed(`Comando vtex ${safeCommand} executado com sucesso`);
         return { success: true, output: result.stdout };
+      } else {
+        spinner.fail(`Erro ao executar vtex ${safeCommand}`);
+        const safeError = sanitizeErrorMessage(result.error);
+        console.error(chalk.red('Erro:'), safeError);
+        return { success: false, error: safeError };
       }
 
       spinner.fail(`Erro ao executar ${safeCommandText}`);
       console.error(chalk.red('Erro:'), logger.redactSensitive(result.error));
       return { success: false, error: logger.redactSensitive(result.error) };
     } catch (error) {
-      spinner.fail(`Erro ao executar ${safeCommandText}`);
-      console.error(chalk.red('Erro:'), logger.redactSensitive(error.message));
-      return { success: false, error: logger.redactSensitive(error.message) };
+      spinner.fail(`Erro ao executar vtex ${safeCommand}`);
+      const safeError = sanitizeErrorMessage(error.message);
+      console.error(chalk.red('Erro:'), safeError);
+      return { success: false, error: safeError };
     }
   }
 
@@ -71,10 +78,8 @@ class VtexService {
     const spinner = ora(`Gerando token para conta ${account}...`).start();
     
     try {
-      Validators.assert(Validators.vtexAccount(account));
-
-      const response = await axios.post(
-        buildVtexAuthUrl(account),
+      const response = await httpClient.post(
+        `http://api.vtexcommercestable.com.br/api/vtexid/apptoken/login?an=${account}`,
         {
           appkey: appkey,
           apptoken: apptoken
@@ -99,15 +104,7 @@ class VtexService {
       }
     } catch (error) {
       spinner.fail(`Erro ao gerar token para conta ${account}`);
-
-      if (error.response) {
-        console.error(chalk.red('Erro na API de autenticação VTEX:'), `status ${error.response.status || 'desconhecido'}`);
-      } else if (error.code === 'ECONNABORTED') {
-        console.error(chalk.red('Erro na API de autenticação VTEX:'), 'tempo limite excedido');
-      } else {
-        console.error(chalk.red('Erro na API de autenticação VTEX:'), error.message);
-      }
-
+      console.error(chalk.red('Erro:'), formatHttpError(error, 'Não foi possível gerar o token VTEX.'));
       return null;
     }
   }
@@ -140,7 +137,7 @@ class VtexService {
       }
     } catch (error) {
       spinner.fail(`Erro ao fazer login na conta ${account}`);
-      console.error(chalk.red('Erro:'), logger.redactSensitive(error.message));
+      console.error(chalk.red('Erro:'), sanitizeErrorMessage(error.message));
       return false;
     }
   }
@@ -187,8 +184,9 @@ class VtexService {
       }
     } catch (error) {
       spinner.fail('Erro ao fazer link da aplicação');
-      console.error(chalk.red('Erro:'), logger.redactSensitive(error.message));
-      return { success: false, error: logger.redactSensitive(error.message) };
+      const safeError = sanitizeErrorMessage(error.message);
+      console.error(chalk.red('Erro:'), safeError);
+      return { success: false, error: safeError };
     }
   }
 
@@ -443,7 +441,7 @@ class VtexService {
       
       return null;
     } catch (error) {
-      console.error(chalk.red('Erro ao obter informações do workspace:'), logger.redactSensitive(error.message));
+      console.error(chalk.red('Erro ao obter informações do workspace:'), sanitizeErrorMessage(error.message));
       return null;
     }
   }
