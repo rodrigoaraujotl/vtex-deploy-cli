@@ -5,6 +5,16 @@ const dockerService = require('./docker');
 const Validators = require('../utils/validators');
 const logger = require('../utils/logger');
 
+const VTEX_AUTH_BASE_URL = 'https://api.vtexcommercestable.com.br';
+const VTEX_AUTH_TOKEN_PATH = '/api/vtexid/apptoken/login';
+const VTEX_AUTH_TIMEOUT_MS = 10000;
+
+function buildVtexAuthUrl(account) {
+  const url = new URL(VTEX_AUTH_TOKEN_PATH, VTEX_AUTH_BASE_URL);
+  url.searchParams.set('an', account);
+  return url.toString();
+}
+
 class VtexService {
   constructor() {
     this.defaultService = 'app'; // nome padrão do serviço no docker-compose
@@ -64,7 +74,7 @@ class VtexService {
       Validators.assert(Validators.vtexAccount(account));
 
       const response = await axios.post(
-        `http://api.vtexcommercestable.com.br/api/vtexid/apptoken/login?an=${encodeURIComponent(account)}`,
+        buildVtexAuthUrl(account),
         {
           appkey: appkey,
           apptoken: apptoken
@@ -72,21 +82,32 @@ class VtexService {
         {
           headers: {
             'Content-Type': 'application/json'
-          }
+          },
+          timeout: VTEX_AUTH_TIMEOUT_MS
         }
       );
       
-      if (response.data && response.data.token) {
+      const token = response.data?.token;
+
+      if (typeof token === 'string' && token.length > 0) {
         spinner.succeed(`Token gerado com sucesso para conta ${account}`);
-        return response.data.token;
+        return token;
       } else {
         spinner.fail(`Erro ao gerar token para conta ${account}`);
-        console.error(chalk.red('Resposta inválida da API'));
+        console.error(chalk.red('Resposta inesperada da API de autenticação VTEX'), `(status ${response.status || 'desconhecido'})`);
         return null;
       }
     } catch (error) {
       spinner.fail(`Erro ao gerar token para conta ${account}`);
-      console.error(chalk.red('Erro:'), logger.redactSensitive(error.response?.data || error.message));
+
+      if (error.response) {
+        console.error(chalk.red('Erro na API de autenticação VTEX:'), `status ${error.response.status || 'desconhecido'}`);
+      } else if (error.code === 'ECONNABORTED') {
+        console.error(chalk.red('Erro na API de autenticação VTEX:'), 'tempo limite excedido');
+      } else {
+        console.error(chalk.red('Erro na API de autenticação VTEX:'), error.message);
+      }
+
       return null;
     }
   }
@@ -536,4 +557,10 @@ class VtexService {
   }
 }
 
-module.exports = new VtexService();
+const vtexService = new VtexService();
+
+vtexService.VTEX_AUTH_BASE_URL = VTEX_AUTH_BASE_URL;
+vtexService.VTEX_AUTH_TIMEOUT_MS = VTEX_AUTH_TIMEOUT_MS;
+vtexService.buildVtexAuthUrl = buildVtexAuthUrl;
+
+module.exports = vtexService;

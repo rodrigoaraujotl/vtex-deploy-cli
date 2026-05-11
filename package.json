@@ -7,7 +7,7 @@
     "vtex-deploy": "./bin/index.js"
   },
   "scripts": {
-    "test": "node test/env-config.test.js",
+    "test": "node test/vtex-auth-url.test.js",
     "start": "node index.js"
   },
   "keywords": [
