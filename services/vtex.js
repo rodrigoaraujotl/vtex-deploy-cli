@@ -20,10 +20,10 @@ class VtexService {
    */
   async execVtexCommand(command, service = this.defaultService) {
     const spinner = ora(`Executando: vtex ${command}`).start();
-    
+
     try {
       const result = await dockerService.execInContainer(service, `vtex ${command}`);
-      
+
       if (result.success) {
         spinner.succeed(`Comando vtex ${command} executado com sucesso`);
         return { success: true, output: result.stdout };
@@ -48,7 +48,7 @@ class VtexService {
    */
   async generateToken(account, appkey, apptoken) {
     const spinner = ora(`Gerando token para conta ${account}...`).start();
-    
+
     try {
       const response = await axios.post(
         `http://api.vtexcommercestable.com.br/api/vtexid/apptoken/login?an=${account}`,
@@ -62,7 +62,7 @@ class VtexService {
           }
         }
       );
-      
+
       if (response.data && response.data.token) {
         spinner.succeed(`Token gerado com sucesso para conta ${account}`);
         return response.data.token;
@@ -86,14 +86,14 @@ class VtexService {
    */
   async login(account, token) {
     const spinner = ora(`Fazendo login na conta ${account}...`).start();
-    
+
     try {
       // Primeiro, faz logout para limpar sessão anterior
       await this.execVtexCommand('logout');
-      
+
       // Faz login com token
       const result = await this.execVtexCommand(`login ${account} --token ${token}`);
-      
+
       if (result.success) {
         spinner.succeed(`Login realizado com sucesso na conta ${account}`);
         return true;
@@ -124,20 +124,20 @@ class VtexService {
    */
   async linkApp() {
     const spinner = ora('Fazendo link da aplicação...').start();
-    
+
     try {
       const result = await this.execVtexCommand('link');
-      
+
       if (result.success) {
         // Extrai URL de preview do output
         const previewUrl = this.extractPreviewUrl(result.output);
-        
+
         spinner.succeed('Link da aplicação realizado com sucesso');
-        
+
         if (previewUrl) {
           console.log(chalk.green('URL de Preview:'), chalk.cyan(previewUrl));
         }
-        
+
         return { success: true, previewUrl, output: result.output };
       } else {
         spinner.fail('Erro ao fazer link da aplicação');
@@ -195,11 +195,11 @@ class VtexService {
   async getWorkspaceInfo() {
     try {
       const result = await this.execVtexCommand('whoami');
-      
+
       if (result.success) {
         return this.parseWorkspaceInfo(result.output);
       }
-      
+
       return null;
     } catch (error) {
       console.error(chalk.red('Erro ao obter informações do workspace:'), error.message);
@@ -215,13 +215,13 @@ class VtexService {
   extractPreviewUrl(output) {
     const urlRegex = /https?:\/\/[^\s]+/g;
     const urls = output.match(urlRegex);
-    
+
     if (urls && urls.length > 0) {
       // Procura por URL que contenha workspace
-      const previewUrl = urls.find(url => url.includes('--'));
+      const previewUrl = urls.find((url) => url.includes('--'));
       return previewUrl || urls[0];
     }
-    
+
     return null;
   }
 
@@ -233,8 +233,8 @@ class VtexService {
   parseWorkspaceInfo(output) {
     const lines = output.split('\n');
     const info = {};
-    
-    lines.forEach(line => {
+
+    lines.forEach((line) => {
       if (line.includes('Account:')) {
         info.account = line.split(':')[1]?.trim();
       }
@@ -245,7 +245,7 @@ class VtexService {
         info.environment = line.split(':')[1]?.trim();
       }
     });
-    
+
     return info;
   }
 
@@ -258,23 +258,23 @@ class VtexService {
    */
   async deployToQA(account, appkey, apptoken) {
     console.log(chalk.blue('Iniciando deploy para QA...'));
-    
+
     // Gera token
     const token = await this.generateToken(account, appkey, apptoken);
     if (!token) return false;
-    
+
     // Login
     const loginSuccess = await this.login(account, token);
     if (!loginSuccess) return false;
-    
+
     // Release
     const releaseSuccess = await this.release();
     if (!releaseSuccess) return false;
-    
+
     // Publish
     const publishSuccess = await this.publish();
     if (!publishSuccess) return false;
-    
+
     console.log(chalk.green('Deploy para QA concluído com sucesso!'));
     return true;
   }
@@ -288,27 +288,27 @@ class VtexService {
    */
   async deployToProduction(account, appkey, apptoken) {
     console.log(chalk.blue('Iniciando deploy para Produção...'));
-    
+
     // Gera token
     const token = await this.generateToken(account, appkey, apptoken);
     if (!token) return false;
-    
+
     // Login
     const loginSuccess = await this.login(account, token);
     if (!loginSuccess) return false;
-    
+
     // Release
     const releaseSuccess = await this.release();
     if (!releaseSuccess) return false;
-    
+
     // Publish
     const publishSuccess = await this.publish();
     if (!publishSuccess) return false;
-    
+
     // Install/Deploy
     const deploySuccess = await this.deploy();
     if (!deploySuccess) return false;
-    
+
     console.log(chalk.green('Deploy para Produção concluído com sucesso!'));
     return true;
   }

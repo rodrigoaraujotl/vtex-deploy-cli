@@ -9,63 +9,63 @@ module.exports = (program) => {
     .description('Configuração inicial do CLI')
     .action(async () => {
       console.log(chalk.cyan('🚀 Configurando CLI de deploy VTEX IO\n'));
-      
+
       const answers = await inquirer.prompt([
         {
           name: 'qaAccount',
           message: 'Conta VTEX QA:',
-          validate: input => input ? true : 'Campo obrigatório',
+          validate: (input) => (input ? true : 'Campo obrigatório')
         },
         {
           name: 'prodAccount',
           message: 'Conta VTEX Produção:',
-          validate: input => input ? true : 'Campo obrigatório',
+          validate: (input) => (input ? true : 'Campo obrigatório')
         },
         {
           type: 'password',
           name: 'qaAppkey',
           message: 'App Key VTEX QA:',
           mask: '*',
-          validate: input => input ? true : 'Campo obrigatório',
+          validate: (input) => (input ? true : 'Campo obrigatório')
         },
         {
           type: 'password',
           name: 'qaApptoken',
           message: 'App Token VTEX QA:',
           mask: '*',
-          validate: input => input ? true : 'Campo obrigatório',
+          validate: (input) => (input ? true : 'Campo obrigatório')
         },
         {
           type: 'password',
           name: 'prodAppkey',
           message: 'App Key VTEX Produção:',
           mask: '*',
-          validate: input => input ? true : 'Campo obrigatório',
+          validate: (input) => (input ? true : 'Campo obrigatório')
         },
         {
           type: 'password',
           name: 'prodApptoken',
           message: 'App Token VTEX Produção:',
           mask: '*',
-          validate: input => input ? true : 'Campo obrigatório',
+          validate: (input) => (input ? true : 'Campo obrigatório')
         },
         {
           name: 'bitbucketWorkspace',
           message: 'Workspace Bitbucket:',
-          validate: input => input ? true : 'Campo obrigatório',
+          validate: (input) => (input ? true : 'Campo obrigatório')
         },
         {
           name: 'bitbucketRepo',
           message: 'Repositório Bitbucket:',
-          validate: input => input ? true : 'Campo obrigatório',
+          validate: (input) => (input ? true : 'Campo obrigatório')
         },
         {
           type: 'password',
           name: 'bitbucketToken',
           message: 'Token Bitbucket:',
           mask: '*',
-          validate: input => input ? true : 'Campo obrigatório',
-        },
+          validate: (input) => (input ? true : 'Campo obrigatório')
+        }
       ]);
 
       const envFileContent = `

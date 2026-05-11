@@ -29,26 +29,28 @@ class EnvUtils {
    */
   parseEnvContent(content) {
     const lines = content.split('\n');
-    
-    lines.forEach(line => {
+
+    lines.forEach((line) => {
       const trimmedLine = line.trim();
-      
+
       // Ignora linhas vazias e comentários
       if (!trimmedLine || trimmedLine.startsWith('#')) {
         return;
       }
-      
+
       const equalIndex = trimmedLine.indexOf('=');
       if (equalIndex > 0) {
         const key = trimmedLine.substring(0, equalIndex).trim();
         let value = trimmedLine.substring(equalIndex + 1).trim();
-        
+
         // Remove aspas se existirem
-        if ((value.startsWith('"') && value.endsWith('"')) || 
-            (value.startsWith("'") && value.endsWith("'"))) {
+        if (
+          (value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))
+        ) {
           value = value.slice(1, -1);
         }
-        
+
         this.envVars[key] = value;
       }
     });
@@ -109,15 +111,15 @@ class EnvUtils {
   validateRequired(requiredVars) {
     const missing = [];
     const present = [];
-    
-    requiredVars.forEach(varName => {
+
+    requiredVars.forEach((varName) => {
       if (this.has(varName)) {
         present.push(varName);
       } else {
         missing.push(varName);
       }
     });
-    
+
     return {
       valid: missing.length === 0,
       missing,
@@ -137,7 +139,7 @@ class EnvUtils {
       `VTEX_${envUpper}_APPKEY`,
       `VTEX_${envUpper}_APPTOKEN`
     ];
-    
+
     return this.validateRequired(requiredVars);
   }
 
@@ -146,12 +148,8 @@ class EnvUtils {
    * @returns {Object} resultado da validação
    */
   validateBitbucketConfig() {
-    const requiredVars = [
-      'BITBUCKET_WORKSPACE',
-      'BITBUCKET_REPOSITORY',
-      'BITBUCKET_TOKEN'
-    ];
-    
+    const requiredVars = ['BITBUCKET_WORKSPACE', 'BITBUCKET_REPOSITORY', 'BITBUCKET_TOKEN'];
+
     return this.validateRequired(requiredVars);
   }
 
@@ -164,10 +162,10 @@ class EnvUtils {
     try {
       const envContent = this.generateEnvContent(config);
       fs.writeFileSync(this.envPath, envContent, 'utf8');
-      
+
       // Recarrega as variáveis
       this.loadEnvFile();
-      
+
       return true;
     } catch (error) {
       console.error(chalk.red('Erro ao criar arquivo .env:'), error.message);
@@ -201,7 +199,7 @@ class EnvUtils {
       `BITBUCKET_TOKEN=${config.bitbucketToken || ''}`,
       ''
     ];
-    
+
     return lines.join('\n');
   }
 
@@ -234,28 +232,46 @@ class EnvUtils {
    */
   displayConfigStatus() {
     console.log(chalk.blue('\n📋 Status das Configurações:\n'));
-    
+
     // VTEX QA
     const vtexQaValid = this.validateVtexConfig('qa');
     console.log(chalk.yellow('VTEX QA:'));
-    console.log(`  Account: ${vtexQaValid.present.includes('QA_ACCOUNT') ? chalk.green('✓') : chalk.red('✗')}`);
-    console.log(`  Appkey: ${vtexQaValid.present.includes('VTEX_QA_APPKEY') ? chalk.green('✓') : chalk.red('✗')}`);
-    console.log(`  Apptoken: ${vtexQaValid.present.includes('VTEX_QA_APPTOKEN') ? chalk.green('✓') : chalk.red('✗')}`);
-    
+    console.log(
+      `  Account: ${vtexQaValid.present.includes('QA_ACCOUNT') ? chalk.green('✓') : chalk.red('✗')}`
+    );
+    console.log(
+      `  Appkey: ${vtexQaValid.present.includes('VTEX_QA_APPKEY') ? chalk.green('✓') : chalk.red('✗')}`
+    );
+    console.log(
+      `  Apptoken: ${vtexQaValid.present.includes('VTEX_QA_APPTOKEN') ? chalk.green('✓') : chalk.red('✗')}`
+    );
+
     // VTEX Prod
     const vtexProdValid = this.validateVtexConfig('prod');
     console.log(chalk.yellow('\nVTEX Produção:'));
-    console.log(`  Account: ${vtexProdValid.present.includes('PROD_ACCOUNT') ? chalk.green('✓') : chalk.red('✗')}`);
-    console.log(`  Appkey: ${vtexProdValid.present.includes('VTEX_PROD_APPKEY') ? chalk.green('✓') : chalk.red('✗')}`);
-    console.log(`  Apptoken: ${vtexProdValid.present.includes('VTEX_PROD_APPTOKEN') ? chalk.green('✓') : chalk.red('✗')}`);
-    
+    console.log(
+      `  Account: ${vtexProdValid.present.includes('PROD_ACCOUNT') ? chalk.green('✓') : chalk.red('✗')}`
+    );
+    console.log(
+      `  Appkey: ${vtexProdValid.present.includes('VTEX_PROD_APPKEY') ? chalk.green('✓') : chalk.red('✗')}`
+    );
+    console.log(
+      `  Apptoken: ${vtexProdValid.present.includes('VTEX_PROD_APPTOKEN') ? chalk.green('✓') : chalk.red('✗')}`
+    );
+
     // Bitbucket
     const bitbucketValid = this.validateBitbucketConfig();
     console.log(chalk.yellow('\nBitbucket:'));
-    console.log(`  Workspace: ${bitbucketValid.present.includes('BITBUCKET_WORKSPACE') ? chalk.green('✓') : chalk.red('✗')}`);
-    console.log(`  Repository: ${bitbucketValid.present.includes('BITBUCKET_REPOSITORY') ? chalk.green('✓') : chalk.red('✗')}`);
-    console.log(`  Token: ${bitbucketValid.present.includes('BITBUCKET_TOKEN') ? chalk.green('✓') : chalk.red('✗')}`);
-    
+    console.log(
+      `  Workspace: ${bitbucketValid.present.includes('BITBUCKET_WORKSPACE') ? chalk.green('✓') : chalk.red('✗')}`
+    );
+    console.log(
+      `  Repository: ${bitbucketValid.present.includes('BITBUCKET_REPOSITORY') ? chalk.green('✓') : chalk.red('✗')}`
+    );
+    console.log(
+      `  Token: ${bitbucketValid.present.includes('BITBUCKET_TOKEN') ? chalk.green('✓') : chalk.red('✗')}`
+    );
+
     console.log();
   }
 }
