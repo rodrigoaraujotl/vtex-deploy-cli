@@ -45,6 +45,81 @@ class Validators {
     return true;
   }
 
+
+  /**
+   * Valida nome de serviço Docker Compose.
+   * @param {string} service serviço a validar
+   * @returns {boolean|string} true se válido, string com erro se inválido
+   */
+  static dockerService(service) {
+    if (!service || service.trim() === '') {
+      return 'Serviço Docker é obrigatório';
+    }
+    const serviceRegex = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/;
+    if (!serviceRegex.test(service)) {
+      return 'Serviço Docker deve conter apenas letras, números, pontos, underscore e hífens, sem iniciar com símbolo';
+    }
+    return true;
+  }
+
+  /**
+   * Valida nome de workspace VTEX.
+   * @param {string} workspace workspace a validar
+   * @returns {boolean|string} true se válido, string com erro se inválido
+   */
+  static vtexWorkspace(workspace) {
+    if (!workspace || workspace.trim() === '') {
+      return 'Workspace VTEX é obrigatório';
+    }
+    const workspaceRegex = /^[a-z0-9][a-z0-9-]{0,127}$/;
+    if (!workspaceRegex.test(workspace)) {
+      return 'Workspace VTEX deve conter apenas letras minúsculas, números e hífens, sem iniciar com hífen';
+    }
+    return true;
+  }
+
+  /**
+   * Valida nome de app VTEX (vendor.name ou vendor.name@version).
+   * @param {string} appName app a validar
+   * @returns {boolean|string} true se válido, string com erro se inválido
+   */
+  static vtexAppName(appName) {
+    if (!appName || appName.trim() === '') {
+      return 'Nome da aplicação VTEX é obrigatório';
+    }
+    const appRegex = /^[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*(?:@[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9.-]+)?)?$/;
+    if (!appRegex.test(appName)) {
+      return 'Aplicação VTEX deve usar o formato vendor.name ou vendor.name@x.y.z';
+    }
+    return true;
+  }
+
+  /**
+   * Valida versão semântica.
+   * @param {string} version versão a validar
+   * @returns {boolean|string} true se válido, string com erro se inválido
+   */
+  static version(version) {
+    if (!version || version.trim() === '') {
+      return 'Versão é obrigatória';
+    }
+    const versionRegex = /^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9.-]+)?$/;
+    if (!versionRegex.test(version)) {
+      return 'Versão deve seguir o formato semântico x.y.z';
+    }
+    return true;
+  }
+
+  /**
+   * Lança erro quando uma validação falha.
+   * @param {boolean|string} result resultado do validador
+   */
+  static assert(result) {
+    if (result !== true) {
+      throw new Error(result);
+    }
+  }
+
   /**
    * Valida nome de conta VTEX
    * @param {string} account conta a validar
@@ -54,9 +129,9 @@ class Validators {
     if (!account || account.trim() === '') {
       return 'Conta VTEX é obrigatória';
     }
-    const accountRegex = /^[a-z0-9-]+$/;
+    const accountRegex = /^[a-z0-9][a-z0-9-]{0,127}$/;
     if (!accountRegex.test(account)) {
-      return 'Conta VTEX deve conter apenas letras minúsculas, números e hífens';
+      return 'Conta VTEX deve conter apenas letras minúsculas, números e hífens, sem iniciar com hífen';
     }
     return true;
   }
@@ -117,12 +192,15 @@ class Validators {
     if (!branch || branch.trim() === '') {
       return 'Nome da branch é obrigatório';
     }
-    const branchRegex = /^[a-zA-Z0-9._/-]+$/;
+    const branchRegex = /^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,254}$/;
     if (!branchRegex.test(branch)) {
-      return 'Nome da branch deve conter apenas letras, números, pontos, underscore, hífens e barras';
+      return 'Nome da branch deve conter apenas letras, números, pontos, underscore, hífens e barras, sem iniciar com símbolo';
     }
-    if (branch.startsWith('/') || branch.endsWith('/')) {
-      return 'Nome da branch não pode começar ou terminar com barra';
+    if (branch.startsWith('/') || branch.endsWith('/') || branch.includes('//')) {
+      return 'Nome da branch não pode começar/terminar com barra nem conter barras duplicadas';
+    }
+    if (branch.includes('..') || branch.includes('@{') || branch.endsWith('.lock') || branch.split('/').some(part => part.startsWith('.') || part.endsWith('.'))) {
+      return 'Nome da branch contém sequência reservada pelo Git';
     }
     return true;
   }
