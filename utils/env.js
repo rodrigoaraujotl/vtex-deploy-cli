@@ -288,6 +288,38 @@ class EnvUtils {
   }
 
   /**
+   * Carrega e normaliza as variáveis esperadas pelos comandos.
+   * @returns {Object} objeto plano com configuração VTEX e Bitbucket
+   */
+  loadEnv() {
+    this.envVars = {};
+    this.loadEnvFile();
+
+    const config = {
+      ...this.getAllVars(),
+      QA_ACCOUNT: this.get('QA_ACCOUNT'),
+      VTEX_QA_APPKEY: this.get('VTEX_QA_APPKEY'),
+      VTEX_QA_APPTOKEN: this.get('VTEX_QA_APPTOKEN'),
+      PROD_ACCOUNT: this.get('PROD_ACCOUNT'),
+      VTEX_PROD_APPKEY: this.get('VTEX_PROD_APPKEY'),
+      VTEX_PROD_APPTOKEN: this.get('VTEX_PROD_APPTOKEN'),
+      BITBUCKET_WORKSPACE: this.get('BITBUCKET_WORKSPACE'),
+      BITBUCKET_REPOSITORY: this.get('BITBUCKET_REPOSITORY'),
+      BITBUCKET_TOKEN: this.get('BITBUCKET_TOKEN')
+    };
+
+    // Aliases usados por alguns comandos legados.
+    config.QA_APPKEY = config.VTEX_QA_APPKEY;
+    config.QA_APPTOKEN = config.VTEX_QA_APPTOKEN;
+    config.PROD_APPKEY = config.VTEX_PROD_APPKEY;
+    config.PROD_APPTOKEN = config.VTEX_PROD_APPTOKEN;
+    config.VTEX_QA_ACCOUNT = config.QA_ACCOUNT;
+    config.VTEX_PROD_ACCOUNT = config.PROD_ACCOUNT;
+
+    return config;
+  }
+
+  /**
    * Lista todas as variáveis carregadas
    * @returns {Object} todas as variáveis
    */

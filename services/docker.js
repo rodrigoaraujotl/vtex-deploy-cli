@@ -61,6 +61,94 @@ class DockerService {
   }
 
   /**
+   * Verifica disponibilidade do Docker e se há containers em execução.
+   * @returns {Promise<Object>} status consolidado com contrato estável
+   */
+  async getStatus() {
+    const available = await this.isDockerAvailable();
+
+    if (!available) {
+      return { available: false, running: false, containers: [] };
+    }
+
+    const containers = await this.listContainers();
+    const running = containers.some(container => container.running);
+
+    return { available: true, running, containers };
+  }
+
+  /**
+   * Lista containers do docker-compose atual.
+   * @returns {Promise<Array>} containers normalizados
+   */
+  async listContainers() {
+    try {
+      const { stdout } = await execAsync('docker-compose ps --format json');
+      return this.parseComposePs(stdout);
+    } catch (error) {
+      console.error(chalk.red('Erro ao listar containers:'), error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Obtém logs dos containers do docker-compose.
+   * @param {Object} options opções de logs
+   * @returns {Promise<Array<string>>} linhas de log
+   */
+  async getLogs(options = {}) {
+    const lines = Number.isInteger(options.lines) ? options.lines : parseInt(options.lines, 10) || 50;
+    const follow = options.follow ? '--follow' : '';
+
+    try {
+      const { stdout } = await execAsync(`docker-compose logs --tail=${lines} ${follow}`.trim());
+      return stdout.split('\n').filter(line => line.length > 0);
+    } catch (error) {
+      console.error(chalk.red('Erro ao obter logs dos containers:'), error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Normaliza a saída do docker-compose ps.
+   * @param {string} output saída do comando
+   * @returns {Array<Object>} containers normalizados
+   */
+  parseComposePs(output) {
+    if (!output || !output.trim()) {
+      return [];
+    }
+
+    const parseContainer = (container) => {
+      const state = container.State || container.Status || '';
+      return {
+        name: container.Name || container.Service || container.name || 'unknown',
+        service: container.Service || container.service || container.Name || 'unknown',
+        state,
+        status: container.Status || state,
+        running: String(state).toLowerCase().includes('running') || String(container.Status || '').toLowerCase().includes('up')
+      };
+    };
+
+    try {
+      const parsed = JSON.parse(output);
+      return Array.isArray(parsed) ? parsed.map(parseContainer) : [parseContainer(parsed)];
+    } catch (error) {
+      return output
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean)
+        .map(line => {
+          try {
+            return parseContainer(JSON.parse(line));
+          } catch (parseError) {
+            return { name: line, service: line, state: line, status: line, running: /running|up/i.test(line) };
+          }
+        });
+    }
+  }
+
+  /**
    * Aguarda os containers ficarem ativos
    * @param {number} maxWaitTime tempo máximo de espera em ms
    * @returns {Promise<boolean>} true se containers estão ativos
