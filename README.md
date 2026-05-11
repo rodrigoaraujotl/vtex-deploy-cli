@@ -4,7 +4,7 @@ Uma CLI para automatizar o fluxo de deploy de aplicações VTEX IO, integrando G
 
 ## 📋 Pré-requisitos
 
-- Node.js 18+ 
+- Node.js 18+
 - Docker e Docker Compose
 - Git
 - Conta VTEX (QA e/ou Produção)
@@ -44,13 +44,14 @@ vtex-deploy config:init
 ```
 
 Este comando irá:
+
 - Coletar informações das contas VTEX (QA e Produção)
 - Solicitar appkey e apptoken VTEX para cada ambiente
 - Configurar workspace, repositório e token do Bitbucket
 - Gerar arquivo `.env` com todas as variáveis necessárias
 - Instruir para adicionar `.env` ao `.gitignore` (se necessário)
 
-**Nota:** A CLI agora usa appkey/apptoken em vez de tokens diretos. Os tokens VTEX são gerados automaticamente quando necessário usando a API oficial da VTEX.
+**Nota:** A CLI agora usa appkey/apptoken em vez de tokens diretos. Os tokens VTEX são gerados automaticamente quando necessário usando a API oficial da VTEX por HTTPS.
 
 ### Variáveis de Ambiente
 
@@ -79,19 +80,25 @@ A CLI utiliza o sistema de appkey/apptoken da VTEX para autenticação:
 
 1. **AppKey e AppToken**: Credenciais permanentes que não expiram
 2. **Geração Automática de Tokens**: A CLI gera automaticamente tokens temporários quando necessário
-3. **API Oficial**: Utiliza a API oficial da VTEX para geração de tokens: `http://api.vtexcommercestable.com.br/api/vtexid/apptoken/login`
+3. **API Oficial via HTTPS**: Utiliza a API oficial da VTEX para geração de tokens com base segura `https://api.vtexcommercestable.com.br` e endpoint `https://api.vtexcommercestable.com.br/api/vtexid/apptoken/login`. A conta VTEX é enviada no parâmetro de query `an`.
 
 **Como obter AppKey e AppToken:**
+
 1. Acesse o Admin VTEX da sua conta
 2. Vá em "Configurações da conta" > "Chaves de aplicação"
 3. Crie uma nova chave de aplicação
 4. Copie o AppKey e AppToken gerados
+
+## 🔖 Versão da CLI
+
+A versão exibida por `vtex-deploy --version` é controlada pelo campo `version` do `package.json`. Para publicar ou validar uma nova versão da CLI, atualize esse campo no `package.json`; o comando de versão usará esse valor automaticamente.
 
 ## 📚 Comandos Disponíveis
 
 ### 🔧 Configuração
 
 #### `config:init`
+
 Configura a CLI interativamente.
 
 ```bash
@@ -101,6 +108,7 @@ vtex-deploy config:init
 ### 📝 Gerenciamento de Tasks
 
 #### `task:create <nome> <numero>`
+
 Cria uma nova task de desenvolvimento.
 
 ```bash
@@ -108,6 +116,7 @@ vtex-deploy task:create feature 123
 ```
 
 **O que faz:**
+
 1. Cria branch `task-feature-123`
 2. Faz checkout para a nova branch
 3. Inicia Docker via `docker-compose up -d`
@@ -117,11 +126,13 @@ vtex-deploy task:create feature 123
 7. Exibe URL de preview
 
 **Opções:**
-- `--no-docker`: Pula a inicialização do Docker
-- `--no-link`: Pula o comando `vtex link`
-- `--workspace <name>`: Usa workspace específico
+- `--force`: Faz checkout para branch existente sem confirmação
+- `--ci`: Executa sem prompts e falha se faltar confirmação/parâmetro obrigatório
+- `--non-interactive`: Desabilita prompts
+- `--yes`: Confirma prompts não destrutivos
 
 #### `task:status`
+
 Exibe status da task atual.
 
 ```bash
@@ -129,6 +140,7 @@ vtex-deploy task:status
 ```
 
 **Informações exibidas:**
+
 - Branch Git atual
 - Status do workspace VTEX
 - Status do Docker
@@ -136,12 +148,14 @@ vtex-deploy task:status
 - Próximos passos sugeridos
 
 **Opções:**
+
 - `--verbose`: Informações detalhadas
 - `--environment <env>`: Ambiente específico (qa/prod)
 
 ### 🔄 Pull Requests
 
 #### `pr:create <ambiente>`
+
 Cria Pull Request para QA ou Produção.
 
 ```bash
@@ -150,6 +164,7 @@ vtex-deploy pr:create prod
 ```
 
 **O que faz:**
+
 1. Valida branch atual
 2. Define branch de destino (`staging` para QA, `main` para Prod)
 3. Confirma ação via prompt
@@ -158,12 +173,16 @@ vtex-deploy pr:create prod
 6. Retorna URL da PR
 
 **Opções:**
+
 - `--title <title>`: Título customizado da PR
 - `--description <desc>`: Descrição customizada
-- `--reviewers <users>`: Revisores (separados por vírgula)
-- `--force`: Pula confirmações
+- `--no-deploy`: Não executar deploy antes de criar o PR
+- `--ci`: Executa sem prompts e falha se faltar confirmação/parâmetro obrigatório
+- `--non-interactive`: Desabilita prompts
+- `--yes`: Confirma prompts não destrutivos
 
 #### `pr:status`
+
 Exibe status dos Pull Requests.
 
 ```bash
@@ -171,6 +190,7 @@ vtex-deploy pr:status
 ```
 
 **Opções:**
+
 - `--all`: Exibe todos os PRs, não apenas da branch atual
 - `--state <state>`: Filtrar por estado (OPEN, MERGED, DECLINED)
 - `--limit <number>`: Limite de PRs a exibir
@@ -178,6 +198,7 @@ vtex-deploy pr:status
 ### 🚀 Deploy
 
 #### `deploy <ambiente>`
+
 Executa deploy VTEX para o ambiente especificado.
 
 ```bash
@@ -186,16 +207,19 @@ vtex-deploy deploy prod
 ```
 
 **Fluxo QA:**
+
 1. `vtex release`
 2. `vtex publish`
 3. `vtex install`
 
 **Fluxo Produção:**
+
 1. `vtex release`
 2. `vtex publish`
 3. `vtex deploy`
 
 **Opções:**
+
 - `--workspace <name>`: Workspace específico
 - `--force`: Força deploy sem confirmação
 - `--skip-release`: Pula etapa de release
@@ -203,6 +227,7 @@ vtex-deploy deploy prod
 - `--only-link`: Executa apenas `vtex link`
 
 #### `deploy:status`
+
 Verifica status do último deploy.
 
 ```bash
@@ -210,14 +235,22 @@ vtex-deploy deploy:status
 ```
 
 #### `deploy:rollback <ambiente>`
+
 Faz rollback do último deploy.
 
 ```bash
 vtex-deploy deploy:rollback qa
 vtex-deploy deploy:rollback prod
+vtex-deploy deploy:rollback prod --version 1.2.3 --confirm-rollback --ci
 ```
 
+**Opções:**
+- `--version <version>`: Versão específica para rollback
+- `--confirm-rollback`: Confirma rollback explicitamente em CI/não interativo
+- `--ci`: Executa sem prompts e exige flags explícitas para rollback
+
 #### `deploy:logs`
+
 Exibe logs do deploy atual.
 
 ```bash
@@ -225,12 +258,14 @@ vtex-deploy deploy:logs
 ```
 
 **Opções:**
+
 - `--follow`: Acompanha logs em tempo real
 - `--lines <number>`: Número de linhas a exibir
 
 ### 📊 Status Geral
 
 #### `status`
+
 Exibe status geral do projeto.
 
 ```bash
@@ -238,6 +273,7 @@ vtex-deploy status
 ```
 
 **Informações exibidas:**
+
 - Status da configuração
 - Status do Git
 - Status do Docker
@@ -246,10 +282,89 @@ vtex-deploy status
 - Recomendações
 
 #### `workspace:status`
+
 Exibe status detalhado dos workspaces VTEX.
 
 ```bash
 vtex-deploy workspace:status
+```
+
+
+## 🤖 Uso em CI/CD e modo não interativo
+
+A CLI aceita opções globais para execução sem prompts:
+
+- `--ci`: ativa modo CI/não interativo. Também é ativado automaticamente quando a variável de ambiente `CI=true` está presente.
+- `--non-interactive`: desabilita prompts sem depender da variável `CI`.
+- `--yes` (`-y`): confirma automaticamente prompts não destrutivos.
+
+Em modo não interativo, qualquer informação que antes seria solicitada por prompt deve ser informada por flag. Se faltar um parâmetro obrigatório, a CLI encerra com mensagem clara e código de saída não-zero. Operações destrutivas exigem flags explícitas adicionais em CI:
+
+- Rollback: `--confirm-rollback` e `--version <version>` quando a versão não puder ser selecionada interativamente.
+- Merge de PR: `--confirm-merge`.
+
+Códigos de saída:
+
+- `0`: comando concluído com sucesso ou cancelamento interativo pelo usuário.
+- `1`: falhas de rede, autenticação, Docker/VTEX/Bitbucket/Git ou execução externa.
+- `2`: falhas de validação, configuração ausente ou uso inválido em modo não interativo.
+
+### Exemplos de pipeline
+
+#### GitHub Actions
+
+```yaml
+name: Deploy QA
+
+on:
+  push:
+    branches:
+      - staging
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CI: 'true'
+      QA_ACCOUNT: ${{ secrets.QA_ACCOUNT }}
+      VTEX_QA_APPKEY: ${{ secrets.VTEX_QA_APPKEY }}
+      VTEX_QA_APPTOKEN: ${{ secrets.VTEX_QA_APPTOKEN }}
+      BITBUCKET_WORKSPACE: ${{ secrets.BITBUCKET_WORKSPACE }}
+      BITBUCKET_REPOSITORY: ${{ secrets.BITBUCKET_REPOSITORY }}
+      BITBUCKET_TOKEN: ${{ secrets.BITBUCKET_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx vtex-deploy deploy qa --ci --force --workspace staging
+```
+
+#### Bitbucket Pipelines
+
+```yaml
+pipelines:
+  branches:
+    main:
+      - step:
+          name: Deploy produção
+          image: node:20
+          script:
+            - npm ci
+            - npx vtex-deploy deploy prod --ci --force --workspace master
+```
+
+#### Rollback controlado em CI
+
+```bash
+vtex-deploy deploy:rollback prod --ci --version 1.2.3 --confirm-rollback
+```
+
+#### Merge automatizado de PR
+
+```bash
+vtex-deploy pr:merge 123 --ci --confirm-merge --close-branch
 ```
 
 ## 🐳 Docker
@@ -268,7 +383,7 @@ services:
     environment:
       - VTEX_ENV=dev
     ports:
-      - "3000:3000"
+      - '3000:3000'
     command: tail -f /dev/null
 
 volumes:
@@ -304,16 +419,19 @@ vtex-deploy-cli/
 ## 🎯 Fluxo de Trabalho Típico
 
 ### 1. Configuração Inicial
+
 ```bash
 vtex-deploy config:init
 ```
 
 ### 2. Criar Nova Task
+
 ```bash
 vtex-deploy task:create nova-feature 456
 ```
 
 ### 3. Desenvolver e Testar
+
 ```bash
 # Verificar status
 vtex-deploy task:status
@@ -325,16 +443,19 @@ git push origin task-nova-feature-456
 ```
 
 ### 4. Deploy para QA
+
 ```bash
 vtex-deploy pr:create qa
 ```
 
 ### 5. Deploy para Produção
+
 ```bash
 vtex-deploy pr:create prod
 ```
 
 ### 6. Monitoramento
+
 ```bash
 # Status geral
 vtex-deploy status
@@ -351,6 +472,7 @@ vtex-deploy deploy:logs
 ### Problemas Comuns
 
 #### Docker não está rodando
+
 ```bash
 # Iniciar Docker
 docker-compose up -d
@@ -360,6 +482,7 @@ vtex-deploy status
 ```
 
 #### Erro de autenticação VTEX
+
 ```bash
 # Reconfigurar
 vtex-deploy config:init
@@ -369,6 +492,7 @@ vtex-deploy workspace:status
 ```
 
 #### Problemas com Bitbucket
+
 ```bash
 # Verificar configuração
 vtex-deploy status
@@ -378,6 +502,7 @@ vtex-deploy pr:status
 ```
 
 #### Branch não sincronizada
+
 ```bash
 # Verificar status
 vtex-deploy task:status

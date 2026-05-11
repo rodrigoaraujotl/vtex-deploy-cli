@@ -129,6 +129,58 @@ class Logger {
   }
 
   /**
+   * Redige tokens e segredos de mensagens/objetos antes de exibir em logs.
+   * @param {any} value valor potencialmente sensível
+   * @returns {any} valor com segredos mascarados
+   */
+  redactSensitive(value) {
+    if (value === null || value === undefined) {
+      return value;
+    }
+
+    if (value instanceof Error) {
+      const redactedError = new Error(this.redactSensitive(value.message));
+      redactedError.name = value.name;
+      if (value.stack) {
+        redactedError.stack = this.redactSensitive(value.stack);
+      }
+      return redactedError;
+    }
+
+    if (Array.isArray(value)) {
+      return value.map(item => this.redactSensitive(item));
+    }
+
+    if (typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value).map(([key, item]) => {
+          if (this.isSensitiveKey(key)) {
+            return [key, '[REDACTED]'];
+          }
+          return [key, this.redactSensitive(item)];
+        })
+      );
+    }
+
+    if (typeof value !== 'string') {
+      return value;
+    }
+
+    return value
+      .replace(/(--token(?:=|\s+))([^\s]+)/gi, '$1[REDACTED]')
+      .replace(/((?:VTEX_[A-Z0-9_]*_APPTOKEN|BITBUCKET_TOKEN)\s*[=:]\s*)([^\s]+)/gi, '$1[REDACTED]');
+  }
+
+  /**
+   * Verifica se uma chave representa um segredo conhecido.
+   * @param {string} key chave do objeto
+   * @returns {boolean} true se a chave for sensível
+   */
+  isSensitiveKey(key) {
+    return /^(?:token|apptoken|BITBUCKET_TOKEN|VTEX_[A-Z0-9_]*_APPTOKEN)$/i.test(key);
+  }
+
+  /**
    * Log de informação
    * @param {string} message mensagem
    * @param {any} data dados adicionais (opcional)
@@ -350,8 +402,8 @@ class Logger {
       console.log(chalk.bold(this.sanitize(headers).join('\t')));
       console.log(chalk.gray('─'.repeat(headers.join('\t').length)));
     }
-    
-    rows.forEach(row => {
+
+    rows.forEach((row) => {
       if (Array.isArray(row)) {
         console.log(this.sanitize(row).join('\t'));
       } else {
@@ -371,12 +423,12 @@ class Logger {
     }
 
     this.subtitle('Status Atual');
-    
+
     Object.entries(status).forEach(([key, value]) => {
       const formattedKey = key.charAt(0).toUpperCase() + key.slice(1);
       const statusIcon = value ? chalk.green('✓') : chalk.red('✗');
       const statusText = value ? chalk.green('OK') : chalk.red('Erro');
-      
+
       console.log(`  ${statusIcon} ${formattedKey}: ${statusText}`);
     });
   }
@@ -421,7 +473,9 @@ class Logger {
     this.subtitle(`Pull Request #${pr.id}`);
     console.log(`  ${chalk.yellow('Título:')} ${pr.title}`);
     console.log(`  ${chalk.yellow('Estado:')} ${this.formatPRState(pr.state)}`);
-    console.log(`  ${chalk.yellow('Branch:')} ${chalk.cyan(pr.sourceBranch)} → ${chalk.cyan(pr.destinationBranch)}`);
+    console.log(
+      `  ${chalk.yellow('Branch:')} ${chalk.cyan(pr.sourceBranch)} → ${chalk.cyan(pr.destinationBranch)}`
+    );
     console.log(`  ${chalk.yellow('Autor:')} ${pr.author}`);
     console.log(`  ${chalk.yellow('Criado:')} ${pr.createdOn}`);
     this.url('URL', pr.url);
