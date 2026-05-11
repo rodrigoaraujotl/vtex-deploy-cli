@@ -131,7 +131,7 @@ class Validators {
     }
     const accountRegex = /^[a-z0-9][a-z0-9-]{0,127}$/;
     if (!accountRegex.test(account)) {
-      return 'Conta VTEX deve conter apenas letras minúsculas, números e hífens, sem iniciar com hífen';
+      return 'Conta VTEX deve conter apenas letras minúsculas, números e hífens';
     }
     return true;
   }
@@ -192,12 +192,12 @@ class Validators {
     if (!branch || branch.trim() === '') {
       return 'Nome da branch é obrigatório';
     }
+    if (branch.startsWith('/') || branch.endsWith('/') || branch.includes('//')) {
+      return 'Nome da branch não pode começar ou terminar com barra';
+    }
     const branchRegex = /^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,254}$/;
     if (!branchRegex.test(branch)) {
       return 'Nome da branch deve conter apenas letras, números, pontos, underscore, hífens e barras, sem iniciar com símbolo';
-    }
-    if (branch.startsWith('/') || branch.endsWith('/') || branch.includes('//')) {
-      return 'Nome da branch não pode começar/terminar com barra nem conter barras duplicadas';
     }
     if (branch.includes('..') || branch.includes('@{') || branch.endsWith('.lock') || branch.split('/').some(part => part.startsWith('.') || part.endsWith('.'))) {
       return 'Nome da branch contém sequência reservada pelo Git';

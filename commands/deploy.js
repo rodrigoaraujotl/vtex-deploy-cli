@@ -23,18 +23,8 @@ function registerDeployCommands(program) {
     .option('--only-link', 'Executa apenas o link da aplicação')
     .option('--json', 'Emite logs estruturados em JSON Lines')
     .action(async (ambiente, options) => {
-      try {
-        await executeDeploy(ambiente, options);
-      } catch (error) {
-        logger.structured('deploy_finished', {
-          environment: ambiente,
-          result: 'error',
-          error
-        }, 'error');
-        logger.error('Erro durante o deploy:', error);
-        process.exit(1);
-      }
-    });
+      await runAction(() => executeDeploy(ambiente, options), 'Erro durante o deploy:');
+    }));
 
   // Comando deploy:status
   program
@@ -52,14 +42,8 @@ function registerDeployCommands(program) {
     .option('-v, --version <version>', 'Versão específica para rollback')
     .option('--json', 'Emite logs estruturados em JSON Lines')
     .action(async (ambiente, options) => {
-      try {
-        await rollbackDeploy(ambiente, options);
-      } catch (error) {
-        logger.structured('rollback_finished', { environment: ambiente, result: 'error', error }, 'error');
-        logger.error('Erro durante o rollback:', error);
-        process.exit(1);
-      }
-    });
+      await runAction(() => rollbackDeploy(ambiente, options), 'Erro durante o rollback:');
+    }));
 
   // Comando deploy:logs
   program
@@ -89,20 +73,9 @@ async function executeDeploy(ambiente, options = {}) {
 
   // Carregar configuração
   const config = envUtils.loadEnv();
-  const vtexConfig =
-    ambiente === 'qa'
-      ? {
-          account: config.QA_ACCOUNT,
-          appkey: config.VTEX_QA_APPKEY,
-          apptoken: config.VTEX_QA_APPTOKEN
-        }
-      : {
-          account: config.PROD_ACCOUNT,
-          appkey: config.VTEX_PROD_APPKEY,
-          apptoken: config.VTEX_PROD_APPTOKEN
-        };
+  const vtexConfig = envUtils.getEnvironmentConfig(ambiente, config);
 
-  if (!vtexConfig.account || !vtexConfig.appkey || !vtexConfig.apptoken) {
+  if (!envUtils.isEnvironmentConfigured(vtexConfig)) {
     throw new CliError(`Configuração VTEX para ${ambiente.toUpperCase()} não encontrada. Execute: vtex-deploy config:init`, 2);
   }
 
@@ -408,6 +381,7 @@ async function showDeployStatus(options = {}) {
     // Carregar configuração
     const config = envUtils.loadEnv();
 
+
     // Verificar Docker
     logger.subtitle('Status do Docker');
     const dockerStatus = await dockerService.getStatus();
@@ -422,23 +396,7 @@ async function showDeployStatus(options = {}) {
     }
 
     // Status VTEX para cada ambiente configurado
-    const environments = [];
-
-    if (config.VTEX_QA_ACCOUNT && config.VTEX_QA_TOKEN) {
-      environments.push({
-        name: 'qa',
-        account: config.VTEX_QA_ACCOUNT,
-        token: config.VTEX_QA_TOKEN
-      });
-    }
-
-    if (config.VTEX_PROD_ACCOUNT && config.VTEX_PROD_TOKEN) {
-      environments.push({
-        name: 'prod',
-        account: config.VTEX_PROD_ACCOUNT,
-        token: config.VTEX_PROD_TOKEN
-      });
-    }
+    const environments = envUtils.getConfiguredEnvironments(config);
 
     for (const env of environments) {
       if (options.environment && options.environment !== env.name) {
@@ -449,7 +407,8 @@ async function showDeployStatus(options = {}) {
 
       try {
         // Login
-        await vtexService.login(env.account, env.token);
+        const token = await vtexService.generateToken(env.account, env.appkey, env.apptoken);
+        await vtexService.login(env.account, token);
 
         // Obter informações do workspace
         const workspaceInfo = await vtexService.getWorkspaceInfo();
@@ -516,11 +475,9 @@ async function rollbackDeploy(ambiente, options = {}) {
 
     // Carregar configuração
     const config = envUtils.loadEnv();
-    const vtexConfig = ambiente === 'qa' ? 
-      { account: config.QA_ACCOUNT, appkey: config.VTEX_QA_APPKEY, apptoken: config.VTEX_QA_APPTOKEN } :
-      { account: config.PROD_ACCOUNT, appkey: config.VTEX_PROD_APPKEY, apptoken: config.VTEX_PROD_APPTOKEN };
+    const vtexConfig = envUtils.getEnvironmentConfig(ambiente, config);
 
-    if (!vtexConfig.account || !vtexConfig.appkey || !vtexConfig.apptoken) {
+    if (!envUtils.isEnvironmentConfigured(vtexConfig)) {
       throw new CliError(`Configuração VTEX para ${ambiente.toUpperCase()} não encontrada`, 2);
     }
 
