@@ -14,7 +14,10 @@ const program = new Command();
 program
   .name('vtex-deploy')
   .description('CLI para automatizar o fluxo de deploy de aplicações VTEX IO')
-  .version(pkg.version);
+  .version('1.0.0', '-V, --cli-version')
+  .option('--ci', 'Executa em modo CI: sem prompts e exigindo confirmações explícitas para ações destrutivas')
+  .option('-y, --yes', 'Responde automaticamente \"sim\" para confirmações não destrutivas')
+  .option('--non-interactive', 'Desabilita prompts interativos');
 
 // Registrar comandos
 ConfigCommand(program);

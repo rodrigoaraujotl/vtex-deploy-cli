@@ -126,10 +126,10 @@ vtex-deploy task:create feature 123
 7. Exibe URL de preview
 
 **Opções:**
-
-- `--no-docker`: Pula a inicialização do Docker
-- `--no-link`: Pula o comando `vtex link`
-- `--workspace <name>`: Usa workspace específico
+- `--force`: Faz checkout para branch existente sem confirmação
+- `--ci`: Executa sem prompts e falha se faltar confirmação/parâmetro obrigatório
+- `--non-interactive`: Desabilita prompts
+- `--yes`: Confirma prompts não destrutivos
 
 #### `task:status`
 
@@ -176,8 +176,10 @@ vtex-deploy pr:create prod
 
 - `--title <title>`: Título customizado da PR
 - `--description <desc>`: Descrição customizada
-- `--reviewers <users>`: Revisores (separados por vírgula)
-- `--force`: Pula confirmações
+- `--no-deploy`: Não executar deploy antes de criar o PR
+- `--ci`: Executa sem prompts e falha se faltar confirmação/parâmetro obrigatório
+- `--non-interactive`: Desabilita prompts
+- `--yes`: Confirma prompts não destrutivos
 
 #### `pr:status`
 
@@ -239,7 +241,13 @@ Faz rollback do último deploy.
 ```bash
 vtex-deploy deploy:rollback qa
 vtex-deploy deploy:rollback prod
+vtex-deploy deploy:rollback prod --version 1.2.3 --confirm-rollback --ci
 ```
+
+**Opções:**
+- `--version <version>`: Versão específica para rollback
+- `--confirm-rollback`: Confirma rollback explicitamente em CI/não interativo
+- `--ci`: Executa sem prompts e exige flags explícitas para rollback
 
 #### `deploy:logs`
 
@@ -279,6 +287,84 @@ Exibe status detalhado dos workspaces VTEX.
 
 ```bash
 vtex-deploy workspace:status
+```
+
+
+## 🤖 Uso em CI/CD e modo não interativo
+
+A CLI aceita opções globais para execução sem prompts:
+
+- `--ci`: ativa modo CI/não interativo. Também é ativado automaticamente quando a variável de ambiente `CI=true` está presente.
+- `--non-interactive`: desabilita prompts sem depender da variável `CI`.
+- `--yes` (`-y`): confirma automaticamente prompts não destrutivos.
+
+Em modo não interativo, qualquer informação que antes seria solicitada por prompt deve ser informada por flag. Se faltar um parâmetro obrigatório, a CLI encerra com mensagem clara e código de saída não-zero. Operações destrutivas exigem flags explícitas adicionais em CI:
+
+- Rollback: `--confirm-rollback` e `--version <version>` quando a versão não puder ser selecionada interativamente.
+- Merge de PR: `--confirm-merge`.
+
+Códigos de saída:
+
+- `0`: comando concluído com sucesso ou cancelamento interativo pelo usuário.
+- `1`: falhas de rede, autenticação, Docker/VTEX/Bitbucket/Git ou execução externa.
+- `2`: falhas de validação, configuração ausente ou uso inválido em modo não interativo.
+
+### Exemplos de pipeline
+
+#### GitHub Actions
+
+```yaml
+name: Deploy QA
+
+on:
+  push:
+    branches:
+      - staging
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CI: 'true'
+      QA_ACCOUNT: ${{ secrets.QA_ACCOUNT }}
+      VTEX_QA_APPKEY: ${{ secrets.VTEX_QA_APPKEY }}
+      VTEX_QA_APPTOKEN: ${{ secrets.VTEX_QA_APPTOKEN }}
+      BITBUCKET_WORKSPACE: ${{ secrets.BITBUCKET_WORKSPACE }}
+      BITBUCKET_REPOSITORY: ${{ secrets.BITBUCKET_REPOSITORY }}
+      BITBUCKET_TOKEN: ${{ secrets.BITBUCKET_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx vtex-deploy deploy qa --ci --force --workspace staging
+```
+
+#### Bitbucket Pipelines
+
+```yaml
+pipelines:
+  branches:
+    main:
+      - step:
+          name: Deploy produção
+          image: node:20
+          script:
+            - npm ci
+            - npx vtex-deploy deploy prod --ci --force --workspace master
+```
+
+#### Rollback controlado em CI
+
+```bash
+vtex-deploy deploy:rollback prod --ci --version 1.2.3 --confirm-rollback
+```
+
+#### Merge automatizado de PR
+
+```bash
+vtex-deploy pr:merge 123 --ci --confirm-merge --close-branch
 ```
 
 ## 🐳 Docker

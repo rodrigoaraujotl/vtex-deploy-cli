@@ -1,4 +1,3 @@
-const inquirer = require('inquirer');
 const chalk = require('chalk');
 const gitService = require('../services/git');
 const dockerService = require('../services/docker');
@@ -6,6 +5,7 @@ const vtexService = require('../services/vtex');
 const envUtils = require('../utils/env');
 const logger = require('../utils/logger');
 const validators = require('../utils/validators');
+const { addAutomationOptions, confirm, choose, isNonInteractive, requireCIFlag, runAction, CliError } = require('../utils/cli');
 
 /**
  * Registra comandos relacionados a deploy
@@ -13,21 +13,16 @@ const validators = require('../utils/validators');
  */
 function registerDeployCommands(program) {
   // Comando deploy
-  program
+  addAutomationOptions(program
     .command('deploy <ambiente>')
     .description('Executa deploy VTEX para QA ou Produção')
     .option('-w, --workspace <workspace>', 'Workspace específico (padrão: branch atual)')
     .option('-f, --force', 'Força o deploy sem confirmação')
     .option('--skip-release', 'Pula a etapa de release')
     .option('--skip-publish', 'Pula a etapa de publish')
-    .option('--only-link', 'Executa apenas o link da aplicação')
+    .option('--only-link', 'Executa apenas o link da aplicação'))
     .action(async (ambiente, options) => {
-      try {
-        await executeDeploy(ambiente, options);
-      } catch (error) {
-        logger.error('Erro durante o deploy:', error);
-        process.exit(1);
-      }
+      await runAction(() => executeDeploy(ambiente, options), 'Erro durante o deploy:');
     });
 
   // Comando deploy:status
@@ -36,26 +31,17 @@ function registerDeployCommands(program) {
     .description('Verifica status do último deploy')
     .option('-e, --environment <env>', 'Ambiente específico (qa ou prod)')
     .action(async (options) => {
-      try {
-        await showDeployStatus(options);
-      } catch (error) {
-        logger.error('Erro ao verificar status do deploy:', error);
-        process.exit(1);
-      }
+      await runAction(() => showDeployStatus(options), 'Erro ao verificar status do deploy:');
     });
 
   // Comando deploy:rollback
-  program
+  addAutomationOptions(program
     .command('deploy:rollback <ambiente>')
     .description('Faz rollback do último deploy')
     .option('-v, --version <version>', 'Versão específica para rollback')
+    .option('--confirm-rollback', 'Confirma explicitamente o rollback em modo CI/não interativo'))
     .action(async (ambiente, options) => {
-      try {
-        await rollbackDeploy(ambiente, options);
-      } catch (error) {
-        logger.error('Erro durante o rollback:', error);
-        process.exit(1);
-      }
+      await runAction(() => rollbackDeploy(ambiente, options), 'Erro durante o rollback:');
     });
 
   // Comando deploy:logs
@@ -65,12 +51,7 @@ function registerDeployCommands(program) {
     .option('-f, --follow', 'Acompanha logs em tempo real')
     .option('-n, --lines <number>', 'Número de linhas a exibir', '50')
     .action(async (options) => {
-      try {
-        await showDeployLogs(options);
-      } catch (error) {
-        logger.error('Erro ao exibir logs:', error);
-        process.exit(1);
-      }
+      await runAction(() => showDeployLogs(options), 'Erro ao exibir logs:');
     });
 }
 
@@ -86,8 +67,7 @@ async function executeDeploy(ambiente, options = {}) {
   // Validar ambiente
   const envValidation = validators.environment(ambiente);
   if (envValidation !== true) {
-    logger.error('Ambiente inválido:', envValidation);
-    return;
+    throw new CliError(`Ambiente inválido: ${envValidation}`, 2);
   }
 
   // Carregar configuração
@@ -106,10 +86,7 @@ async function executeDeploy(ambiente, options = {}) {
         };
 
   if (!vtexConfig.account || !vtexConfig.appkey || !vtexConfig.apptoken) {
-    logger.error(
-      `Configuração VTEX para ${ambiente.toUpperCase()} não encontrada. Execute: vtex-deploy config:init`
-    );
-    return;
+    throw new CliError(`Configuração VTEX para ${ambiente.toUpperCase()} não encontrada. Execute: vtex-deploy config:init`, 2);
   }
 
   try {
@@ -130,16 +107,17 @@ async function executeDeploy(ambiente, options = {}) {
       const hasUncommitted = await gitService.hasUncommittedChanges();
       if (hasUncommitted && !options.force) {
         logger.warn('Há mudanças não commitadas');
-
-        const { shouldContinue } = await inquirer.prompt([
-          {
-            type: 'confirm',
-            name: 'shouldContinue',
-            message: 'Deseja continuar mesmo assim?',
-            default: false
-          }
-        ]);
-
+        
+        const shouldContinue = await confirm(options, {
+          type: 'confirm',
+          name: 'shouldContinue',
+          message: 'Deseja continuar mesmo assim?',
+          default: false
+        }, {
+          autoYes: Boolean(options.force),
+          errorMessage: 'Modo não interativo: há mudanças não commitadas. Use --force para continuar explicitamente.'
+        });
+        
         if (!shouldContinue) {
           logger.info('Deploy cancelado');
           return;
@@ -160,8 +138,7 @@ async function executeDeploy(ambiente, options = {}) {
 
     if (!dockerStatus.available) {
       logger.failSpinner('Docker não está disponível');
-      logger.error('Docker é necessário para executar os comandos VTEX');
-      return;
+      throw new CliError('Docker é necessário para executar os comandos VTEX', 1);
     }
 
     if (!dockerStatus.running) {
@@ -187,14 +164,15 @@ async function executeDeploy(ambiente, options = {}) {
         `Pular publish: ${options.skipPublish ? chalk.yellow('Sim') : chalk.green('Não')}`
       ]);
 
-      const { shouldProceed } = await inquirer.prompt([
-        {
-          type: 'confirm',
-          name: 'shouldProceed',
-          message: `Confirma o deploy para ${ambiente.toUpperCase()}?`,
-          default: ambiente === 'qa' // Mais cauteloso para prod
-        }
-      ]);
+      const shouldProceed = await confirm(options, {
+        type: 'confirm',
+        name: 'shouldProceed',
+        message: `Confirma o deploy para ${ambiente.toUpperCase()}?`,
+        default: ambiente === 'qa' // Mais cauteloso para prod
+      }, {
+        autoYes: Boolean(options.force),
+        errorMessage: 'Modo não interativo: use --force ou --yes para confirmar o deploy sem prompt.'
+      });
 
       if (!shouldProceed) {
         logger.info('Deploy cancelado pelo usuário');
@@ -217,7 +195,7 @@ async function executeDeploy(ambiente, options = {}) {
 
     if (!deploySuccess) {
       logger.failSpinner('Erro durante o deploy VTEX');
-      return;
+      throw new CliError('Erro durante o deploy VTEX', 1);
     }
 
     logger.succeedSpinner('Deploy VTEX realizado com sucesso');
@@ -277,8 +255,6 @@ async function executeDeploy(ambiente, options = {}) {
 
     logger.nextSteps(nextSteps);
   } catch (error) {
-    logger.error('Erro durante o deploy:', error);
-
     // Sugerir ações de recuperação
     logger.newLine();
     logger.subtitle('Ações de Recuperação');
@@ -420,7 +396,7 @@ async function showDeployStatus(options = {}) {
       ]);
     }
   } catch (error) {
-    logger.error('Erro ao obter status do deploy:', error);
+    throw error;
   }
 }
 
@@ -435,34 +411,46 @@ async function rollbackDeploy(ambiente, options = {}) {
   // Validar ambiente
   const envValidation = validators.environment(ambiente);
   if (envValidation !== true) {
-    logger.error('Ambiente inválido:', envValidation);
-    return;
+    throw new CliError(`Ambiente inválido: ${envValidation}`, 2);
   }
 
   try {
+    requireCIFlag(options, 'confirmRollback', '--confirm-rollback', 'rollback');
+
+    if (!options.version && isNonInteractive(options)) {
+      throw new CliError('Modo não interativo: informe --version <version> para executar rollback.', 2);
+    }
+
     // Carregar configuração
     const config = envUtils.loadEnv();
-    const vtexConfig =
-      ambiente === 'qa'
-        ? { account: config.VTEX_QA_ACCOUNT, token: config.VTEX_QA_TOKEN }
-        : { account: config.VTEX_PROD_ACCOUNT, token: config.VTEX_PROD_TOKEN };
+    const vtexConfig = ambiente === 'qa' ? 
+      { account: config.QA_ACCOUNT, appkey: config.VTEX_QA_APPKEY, apptoken: config.VTEX_QA_APPTOKEN } :
+      { account: config.PROD_ACCOUNT, appkey: config.VTEX_PROD_APPKEY, apptoken: config.VTEX_PROD_APPTOKEN };
 
     if (!vtexConfig.account || !vtexConfig.appkey || !vtexConfig.apptoken) {
-      logger.error(`Configuração VTEX para ${ambiente.toUpperCase()} não encontrada`);
-      return;
+      throw new CliError(`Configuração VTEX para ${ambiente.toUpperCase()} não encontrada`, 2);
     }
 
     // Verificar Docker
     const dockerStatus = await dockerService.getStatus();
     if (!dockerStatus.running) {
-      logger.error('Docker não está rodando. Execute: docker-compose up -d');
-      return;
+      throw new CliError('Docker não está rodando. Execute: docker-compose up -d', 1);
     }
 
     // Login VTEX
-    logger.startSpinner('Fazendo login no VTEX...');
+    logger.startSpinner('Gerando token VTEX...');
     const token = await vtexService.generateToken(vtexConfig.account, vtexConfig.appkey, vtexConfig.apptoken);
-    await vtexService.login(vtexConfig.account, token);
+    if (!token) {
+      logger.failSpinner('Erro ao gerar token VTEX');
+      throw new CliError('Erro de autenticação VTEX', 1);
+    }
+
+    logger.updateSpinner('Fazendo login no VTEX...');
+    const loginSuccess = await vtexService.login(vtexConfig.account, token);
+    if (!loginSuccess) {
+      logger.failSpinner('Erro ao fazer login no VTEX');
+      throw new CliError('Erro de autenticação VTEX', 1);
+    }
     logger.succeedSpinner('Login realizado');
 
     // Listar versões disponíveis
@@ -471,40 +459,39 @@ async function rollbackDeploy(ambiente, options = {}) {
     logger.succeedSpinner('Versões encontradas');
 
     if (!versions || versions.length === 0) {
-      logger.error('Nenhuma versão disponível para rollback');
-      return;
+      throw new CliError('Nenhuma versão disponível para rollback', 2);
     }
 
     // Selecionar versão
     let targetVersion = options.version;
 
     if (!targetVersion) {
-      const { selectedVersion } = await inquirer.prompt([
-        {
-          type: 'list',
-          name: 'selectedVersion',
-          message: 'Selecione a versão para rollback:',
-          choices: versions.map((v) => ({
-            name: `${v.version} (${v.date}) - ${v.description || 'Sem descrição'}`,
-            value: v.version
-          }))
-        }
-      ]);
-
-      targetVersion = selectedVersion;
+      targetVersion = await choose(options, {
+        type: 'list',
+        name: 'selectedVersion',
+        message: 'Selecione a versão para rollback:',
+        choices: versions.map(v => ({
+          name: `${v.version} (${v.date}) - ${v.description || 'Sem descrição'}`,
+          value: v.version
+        }))
+      }, {
+        errorMessage: 'Modo não interativo: informe --version <version> para executar rollback.'
+      });
     }
 
     // Confirmar rollback
     logger.warn(`ATENÇÃO: Você está prestes a fazer rollback para a versão ${targetVersion}`);
-
-    const { shouldProceed } = await inquirer.prompt([
-      {
-        type: 'confirm',
-        name: 'shouldProceed',
-        message: `Confirma o rollback para ${ambiente.toUpperCase()}?`,
-        default: false
-      }
-    ]);
+    
+    const shouldProceed = await confirm(options, {
+      type: 'confirm',
+      name: 'shouldProceed',
+      message: `Confirma o rollback para ${ambiente.toUpperCase()}?`,
+      default: false
+    }, {
+      autoYes: Boolean(options.confirmRollback),
+      allowYes: false,
+      errorMessage: 'Modo não interativo: use --confirm-rollback para confirmar o rollback sem prompt.'
+    });
 
     if (!shouldProceed) {
       logger.info('Rollback cancelado');
@@ -527,7 +514,7 @@ async function rollbackDeploy(ambiente, options = {}) {
       'Investigue a causa do problema na versão anterior'
     ]);
   } catch (error) {
-    logger.error('Erro durante o rollback:', error);
+    throw error;
   }
 }
 
@@ -542,8 +529,7 @@ async function showDeployLogs(options = {}) {
     // Verificar Docker
     const dockerStatus = await dockerService.getStatus();
     if (!dockerStatus.running) {
-      logger.error('Docker não está rodando');
-      return;
+      throw new CliError('Docker não está rodando', 1);
     }
 
     // Obter logs
@@ -578,7 +564,7 @@ async function showDeployLogs(options = {}) {
       logger.info('Acompanhando logs... (Ctrl+C para sair)');
     }
   } catch (error) {
-    logger.error('Erro ao obter logs:', error);
+    throw error;
   }
 }
 
