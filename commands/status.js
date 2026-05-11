@@ -84,19 +84,19 @@ async function showTaskStatus(options = {}) {
   try {
     // Carregar configuração
     const config = envUtils.loadEnv();
-    
+
     // 1. Status do Git
     logger.subtitle('Git');
-    
+
     if (await gitService.isGitRepository()) {
       const currentBranch = await gitService.getCurrentBranch();
       const hasUncommitted = await gitService.hasUncommittedChanges();
       const repoInfo = await gitService.getRepositoryInfo();
-      
+
       logger.status({
         'Branch atual': chalk.cyan(currentBranch),
         'Mudanças não commitadas': hasUncommitted ? chalk.yellow('Sim') : chalk.green('Não'),
-        'Repositório': chalk.blue(repoInfo.name || 'N/A'),
+        Repositório: chalk.blue(repoInfo.name || 'N/A'),
         'Remote URL': chalk.gray(repoInfo.remoteUrl || 'N/A')
       });
 
@@ -135,7 +135,7 @@ async function showTaskStatus(options = {}) {
     // 2. Status do Docker
     logger.newLine();
     logger.subtitle('Docker');
-    
+
     const dockerStatus = await dockerService.getStatus();
     logger.status({
       'Docker disponível': dockerStatus.available,
@@ -147,7 +147,7 @@ async function showTaskStatus(options = {}) {
       if (containers && containers.length > 0) {
         logger.newLine();
         logger.info('Containers ativos:');
-        containers.forEach(container => {
+        containers.forEach((container) => {
           console.log(`  ${chalk.green('•')} ${container.name} (${container.status})`);
         });
       }
@@ -156,7 +156,7 @@ async function showTaskStatus(options = {}) {
     // 3. Status VTEX
     logger.newLine();
     logger.subtitle('VTEX');
-    
+
     if (!dockerStatus.running) {
       logger.warn('Docker não está rodando - informações VTEX indisponíveis');
     } else {
@@ -171,7 +171,6 @@ async function showTaskStatus(options = {}) {
         logger.nextSteps(suggestions);
       }
     }
-
   } catch (error) {
     logger.error('Erro ao obter status da task:', error);
   }
@@ -188,7 +187,7 @@ async function showPRStatus(options = {}) {
   try {
     // Carregar configuração
     const config = envUtils.loadEnv();
-    
+
     // Verificar configuração do Bitbucket
     if (!bitbucketService.isConfigured(config)) {
       logger.error('Configuração do Bitbucket não encontrada. Execute: vtex-deploy config:init');
@@ -211,7 +210,7 @@ async function showPRStatus(options = {}) {
 
     // Buscar PRs
     logger.startSpinner('Buscando Pull Requests...');
-    
+
     let prs;
     if (options.all || !currentBranch) {
       // Buscar todos os PRs
@@ -225,7 +224,7 @@ async function showPRStatus(options = {}) {
         state: options.state
       });
     }
-    
+
     logger.succeedSpinner('Pull Requests obtidos');
     logger.newLine();
 
@@ -237,10 +236,10 @@ async function showPRStatus(options = {}) {
 
     // Exibir PRs
     logger.subtitle(`Pull Requests (${prs.length})`);
-    
+
     for (const pr of prs) {
       logger.pullRequest(pr);
-      
+
       // Informações adicionais se verbose
       if (options.verbose) {
         // Buscar status de build
@@ -248,10 +247,13 @@ async function showPRStatus(options = {}) {
           const buildStatus = await bitbucketService.getBuildStatus(pr.id);
           if (buildStatus && buildStatus.length > 0) {
             logger.info('  Status de Build:');
-            buildStatus.forEach(build => {
-              const status = build.state === 'SUCCESSFUL' ? chalk.green(build.state) :
-                           build.state === 'FAILED' ? chalk.red(build.state) :
-                           chalk.yellow(build.state);
+            buildStatus.forEach((build) => {
+              const status =
+                build.state === 'SUCCESSFUL'
+                  ? chalk.green(build.state)
+                  : build.state === 'FAILED'
+                    ? chalk.red(build.state)
+                    : chalk.yellow(build.state);
               console.log(`    ${status} - ${build.name}`);
             });
           }
@@ -259,7 +261,7 @@ async function showPRStatus(options = {}) {
           // Ignorar erros de build status
         }
       }
-      
+
       logger.newLine();
     }
 
@@ -274,7 +276,6 @@ async function showPRStatus(options = {}) {
         `Com conflitos: ${chalk.red(stats.conflicts)}`
       ]);
     }
-
   } catch (error) {
     logger.error('Erro ao obter status dos PRs:', error);
   }
@@ -291,7 +292,7 @@ async function showGeneralStatus(options = {}) {
   try {
     // Carregar configuração
     const config = envUtils.loadEnv();
-    
+
     // 1. Configuração
     logger.subtitle('Configuração');
     const configStatus = validateConfiguration(config);
@@ -308,8 +309,8 @@ async function showGeneralStatus(options = {}) {
       logger.subtitle('Docker');
       const dockerStatus = await dockerService.getStatus();
       logger.status({
-        'Disponível': dockerStatus.available,
-        'Rodando': dockerStatus.running
+        Disponível: dockerStatus.available,
+        Rodando: dockerStatus.running
       });
 
       // 4. VTEX (resumido)
@@ -333,7 +334,6 @@ async function showGeneralStatus(options = {}) {
       logger.newLine();
       logger.nextSteps(recommendations);
     }
-
   } catch (error) {
     logger.error('Erro ao obter status geral:', error);
   }
@@ -349,7 +349,7 @@ async function showWorkspaceStatus(options = {}) {
   try {
     // Carregar configuração
     const config = envUtils.loadEnv();
-    
+
     // Verificar Docker
     const dockerStatus = await dockerService.getStatus();
     if (!dockerStatus.running) {
@@ -358,7 +358,25 @@ async function showWorkspaceStatus(options = {}) {
     }
 
     // Ambientes a verificar
-    const environments = envUtils.getConfiguredEnvironments(config);
+    const environments = [];
+
+    if (config.QA_ACCOUNT && config.QA_APPKEY && config.QA_APPTOKEN) {
+      environments.push({
+        name: 'qa',
+        account: config.QA_ACCOUNT,
+        appkey: config.QA_APPKEY,
+        apptoken: config.QA_APPTOKEN
+      });
+    }
+
+    if (config.PROD_ACCOUNT && config.PROD_APPKEY && config.PROD_APPTOKEN) {
+      environments.push({
+        name: 'prod',
+        account: config.PROD_ACCOUNT,
+        appkey: config.PROD_APPKEY,
+        apptoken: config.PROD_APPTOKEN
+      });
+    }
 
     if (environments.length === 0) {
       logger.error('Nenhuma configuração VTEX encontrada. Execute: vtex-deploy config:init');
@@ -372,57 +390,58 @@ async function showWorkspaceStatus(options = {}) {
       }
 
       logger.subtitle(`${env.name.toUpperCase()} - ${env.account}`);
-      
+
       try {
         // Login com geração automática de token
         logger.startSpinner(`Conectando ao ${env.name.toUpperCase()}...`);
         const token = await vtexService.generateToken(env.account, env.appkey, env.apptoken);
         await vtexService.login(env.account, token);
         logger.succeedSpinner('Conectado');
-        
+
         // Informações do workspace
         const workspaceInfo = await vtexService.getWorkspaceInfo();
         logger.workspace(workspaceInfo);
-        
+
         // Listar aplicações
         const apps = await vtexService.listApps();
         if (apps && apps.length > 0) {
           logger.info(`\nAplicações instaladas (${apps.length}):`);
-          
+
           // Agrupar por tipo
           const appsByType = groupAppsByType(apps);
-          
-          Object.keys(appsByType).forEach(type => {
+
+          Object.keys(appsByType).forEach((type) => {
             console.log(`\n  ${chalk.cyan(type)}:`);
-            appsByType[type].forEach(app => {
+            appsByType[type].forEach((app) => {
               const status = app.linked ? chalk.green('linked') : chalk.gray('installed');
               console.log(`    ${chalk.white('•')} ${app.name}@${app.version} (${status})`);
             });
           });
         }
-        
+
         // Verificar workspaces disponíveis
         const workspaces = await vtexService.listWorkspaces();
         if (workspaces && workspaces.length > 1) {
           logger.info(`\nWorkspaces disponíveis (${workspaces.length}):`);
-          workspaces.slice(0, 5).forEach(ws => {
-            const current = ws.name === workspaceInfo.workspace ? chalk.green('• atual') : chalk.gray('•');
+          workspaces.slice(0, 5).forEach((ws) => {
+            const current =
+              ws.name === workspaceInfo.workspace ? chalk.green('• atual') : chalk.gray('•');
             console.log(`    ${current} ${ws.name}`);
           });
-          
+
           if (workspaces.length > 5) {
-            console.log(`    ${chalk.gray('... e mais ' + (workspaces.length - 5) + ' workspaces')}`);
+            console.log(
+              `    ${chalk.gray('... e mais ' + (workspaces.length - 5) + ' workspaces')}`
+            );
           }
         }
-        
       } catch (error) {
         logger.failSpinner(`Erro ao conectar ao ${env.name.toUpperCase()}`);
         logger.error(error.message);
       }
-      
+
       logger.newLine();
     }
-
   } catch (error) {
     logger.error('Erro ao obter status dos workspaces:', error);
   }
@@ -453,7 +472,25 @@ function parseTaskBranch(branchName) {
  * @param {Object} options opções
  */
 async function showVTEXStatus(config, options = {}) {
-  const environments = envUtils.getConfiguredEnvironments(config);
+  const environments = [];
+
+  if (config.QA_ACCOUNT && config.QA_APPKEY && config.QA_APPTOKEN) {
+    environments.push({
+      name: 'qa',
+      account: config.QA_ACCOUNT,
+      appkey: config.QA_APPKEY,
+      apptoken: config.QA_APPTOKEN
+    });
+  }
+
+  if (config.PROD_ACCOUNT && config.PROD_APPKEY && config.PROD_APPTOKEN) {
+    environments.push({
+      name: 'prod',
+      account: config.PROD_ACCOUNT,
+      appkey: config.PROD_APPKEY,
+      apptoken: config.PROD_APPTOKEN
+    });
+  }
 
   if (environments.length === 0) {
     logger.warn('Configuração VTEX não encontrada');
@@ -469,12 +506,11 @@ async function showVTEXStatus(config, options = {}) {
       const token = await vtexService.generateToken(env.account, env.appkey, env.apptoken);
       await vtexService.login(env.account, token);
       const workspaceInfo = await vtexService.getWorkspaceInfo();
-      
+
       logger.status({
         [`${env.name.toUpperCase()} - Workspace`]: chalk.cyan(workspaceInfo.workspace),
         [`${env.name.toUpperCase()} - Conta`]: chalk.blue(workspaceInfo.account)
       });
-      
     } catch (error) {
       logger.status({
         [`${env.name.toUpperCase()}`]: chalk.red('Erro de conexão')
@@ -491,20 +527,20 @@ async function showVTEXStatus(config, options = {}) {
  */
 function generateTaskSuggestions(config, dockerStatus) {
   const suggestions = [];
-  
+
   if (!dockerStatus.running) {
     suggestions.push('Inicie o Docker: docker-compose up -d');
   }
-  
-  if (!envUtils.isEnvironmentConfigured(envUtils.getEnvironmentConfig('qa', config))) {
+
+  if (!config.QA_ACCOUNT || !config.QA_APPKEY || !config.QA_APPTOKEN) {
     suggestions.push('Configure VTEX: vtex-deploy config:init');
   }
-  
-  if (dockerStatus.running && envUtils.isEnvironmentConfigured(envUtils.getEnvironmentConfig('qa', config))) {
+
+  if (dockerStatus.running && config.QA_ACCOUNT) {
     suggestions.push('Faça link da aplicação: vtex-deploy task:create <nome> <numero>');
     suggestions.push('Verifique PRs: vtex-deploy pr:status');
   }
-  
+
   return suggestions;
 }
 
@@ -515,9 +551,9 @@ function generateTaskSuggestions(config, dockerStatus) {
  */
 function calculatePRStats(prs) {
   return {
-    open: prs.filter(pr => pr.state === 'OPEN').length,
-    approved: prs.filter(pr => pr.reviewers && pr.reviewers.some(r => r.approved)).length,
-    conflicts: prs.filter(pr => pr.hasConflicts).length
+    open: prs.filter((pr) => pr.state === 'OPEN').length,
+    approved: prs.filter((pr) => pr.reviewers && pr.reviewers.some((r) => r.approved)).length,
+    conflicts: prs.filter((pr) => pr.hasConflicts).length
   };
 }
 
@@ -528,9 +564,17 @@ function calculatePRStats(prs) {
  */
 function validateConfiguration(config) {
   return {
-    'VTEX QA': (envUtils.isEnvironmentConfigured(envUtils.getEnvironmentConfig('qa', config))) ? chalk.green('Configurado') : chalk.red('Não configurado'),
-    'VTEX Prod': (envUtils.isEnvironmentConfigured(envUtils.getEnvironmentConfig('prod', config))) ? chalk.green('Configurado') : chalk.red('Não configurado'),
-    'Bitbucket': bitbucketService.isConfigured(config) ? chalk.green('Configurado') : chalk.red('Não configurado')
+    'VTEX QA':
+      config.QA_ACCOUNT && config.QA_APPKEY && config.QA_APPTOKEN
+        ? chalk.green('Configurado')
+        : chalk.red('Não configurado'),
+    'VTEX Prod':
+      config.PROD_ACCOUNT && config.PROD_APPKEY && config.PROD_APPTOKEN
+        ? chalk.green('Configurado')
+        : chalk.red('Não configurado'),
+    Bitbucket: bitbucketService.isConfigured(config)
+      ? chalk.green('Configurado')
+      : chalk.red('Não configurado')
   };
 }
 
@@ -541,9 +585,9 @@ async function showGitSummary() {
   if (await gitService.isGitRepository()) {
     const currentBranch = await gitService.getCurrentBranch();
     const hasUncommitted = await gitService.hasUncommittedChanges();
-    
+
     logger.status({
-      'Branch': chalk.cyan(currentBranch),
+      Branch: chalk.cyan(currentBranch),
       'Mudanças pendentes': hasUncommitted ? chalk.yellow('Sim') : chalk.green('Não')
     });
   } else {
@@ -558,9 +602,9 @@ async function showGitSummary() {
  * @param {Object} config configuração
  */
 async function showVTEXSummary(config) {
-  const hasQA = envUtils.isEnvironmentConfigured(envUtils.getEnvironmentConfig('qa', config));
-  const hasProd = envUtils.isEnvironmentConfigured(envUtils.getEnvironmentConfig('prod', config));
-  
+  const hasQA = config.QA_ACCOUNT && config.QA_APPKEY && config.QA_APPTOKEN;
+  const hasProd = config.PROD_ACCOUNT && config.PROD_APPKEY && config.PROD_APPTOKEN;
+
   logger.status({
     'QA configurado': hasQA ? chalk.green('Sim') : chalk.red('Não'),
     'Prod configurado': hasProd ? chalk.green('Sim') : chalk.red('Não')
@@ -578,18 +622,17 @@ async function showBitbucketSummary(config) {
       repository: config.BITBUCKET_REPOSITORY,
       token: config.BITBUCKET_TOKEN
     });
-    
+
     const isConnected = await bitbucketService.testConnection();
-    
+
     logger.status({
-      'Conexão': isConnected ? chalk.green('OK') : chalk.red('Falha'),
-      'Workspace': chalk.cyan(config.BITBUCKET_WORKSPACE),
-      'Repositório': chalk.cyan(config.BITBUCKET_REPOSITORY)
+      Conexão: isConnected ? chalk.green('OK') : chalk.red('Falha'),
+      Workspace: chalk.cyan(config.BITBUCKET_WORKSPACE),
+      Repositório: chalk.cyan(config.BITBUCKET_REPOSITORY)
     });
-    
   } catch (error) {
     logger.status({
-      'Bitbucket': chalk.red('Erro de conexão')
+      Bitbucket: chalk.red('Erro de conexão')
     });
   }
 }
@@ -602,20 +645,25 @@ async function showBitbucketSummary(config) {
  */
 function generateRecommendations(config, options) {
   const recommendations = [];
-  
-  if (!envUtils.isEnvironmentConfigured(envUtils.getEnvironmentConfig('qa', config))) {
+
+  if (!config.QA_ACCOUNT || !config.QA_APPKEY || !config.QA_APPTOKEN) {
     recommendations.push('Configure VTEX: vtex-deploy config:init');
   }
-  
+
   if (!bitbucketService.isConfigured(config)) {
     recommendations.push('Configure Bitbucket: vtex-deploy config:init');
   }
-  
-  if (envUtils.isEnvironmentConfigured(envUtils.getEnvironmentConfig('qa', config)) && bitbucketService.isConfigured(config)) {
+
+  if (
+    config.QA_ACCOUNT &&
+    config.QA_APPKEY &&
+    config.QA_APPTOKEN &&
+    bitbucketService.isConfigured(config)
+  ) {
     recommendations.push('Crie uma nova task: vtex-deploy task:create <nome> <numero>');
     recommendations.push('Verifique PRs: vtex-deploy pr:status');
   }
-  
+
   return recommendations;
 }
 
@@ -626,13 +674,13 @@ function generateRecommendations(config, options) {
  */
 function groupAppsByType(apps) {
   const groups = {
-    'Apps': [],
-    'Themes': [],
-    'Services': [],
-    'Others': []
+    Apps: [],
+    Themes: [],
+    Services: [],
+    Others: []
   };
-  
-  apps.forEach(app => {
+
+  apps.forEach((app) => {
     if (app.name.includes('theme')) {
       groups.Themes.push(app);
     } else if (app.name.includes('service')) {
@@ -643,14 +691,14 @@ function groupAppsByType(apps) {
       groups.Apps.push(app);
     }
   });
-  
+
   // Remover grupos vazios
-  Object.keys(groups).forEach(key => {
+  Object.keys(groups).forEach((key) => {
     if (groups[key].length === 0) {
       delete groups[key];
     }
   });
-  
+
   return groups;
 }
 

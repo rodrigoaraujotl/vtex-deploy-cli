@@ -216,7 +216,7 @@ class Logger {
    * @param {string} symbol símbolo para cada item
    */
   list(items, symbol = '•') {
-    items.forEach(item => {
+    items.forEach((item) => {
       console.log(`  ${chalk.cyan(symbol)} ${item}`);
     });
   }
@@ -231,8 +231,8 @@ class Logger {
       console.log(chalk.bold(headers.join('\t')));
       console.log(chalk.gray('─'.repeat(headers.join('\t').length)));
     }
-    
-    rows.forEach(row => {
+
+    rows.forEach((row) => {
       if (Array.isArray(row)) {
         console.log(row.join('\t'));
       } else {
@@ -247,12 +247,12 @@ class Logger {
    */
   status(status) {
     this.subtitle('Status Atual');
-    
+
     Object.entries(status).forEach(([key, value]) => {
       const formattedKey = key.charAt(0).toUpperCase() + key.slice(1);
       const statusIcon = value ? chalk.green('✓') : chalk.red('✗');
       const statusText = value ? chalk.green('OK') : chalk.red('Erro');
-      
+
       console.log(`  ${statusIcon} ${formattedKey}: ${statusText}`);
     });
   }
@@ -282,7 +282,9 @@ class Logger {
     this.subtitle(`Pull Request #${pr.id}`);
     console.log(`  ${chalk.yellow('Título:')} ${pr.title}`);
     console.log(`  ${chalk.yellow('Estado:')} ${this.formatPRState(pr.state)}`);
-    console.log(`  ${chalk.yellow('Branch:')} ${chalk.cyan(pr.sourceBranch)} → ${chalk.cyan(pr.destinationBranch)}`);
+    console.log(
+      `  ${chalk.yellow('Branch:')} ${chalk.cyan(pr.sourceBranch)} → ${chalk.cyan(pr.destinationBranch)}`
+    );
     console.log(`  ${chalk.yellow('Autor:')} ${pr.author}`);
     console.log(`  ${chalk.yellow('Criado:')} ${pr.createdOn}`);
     this.url('URL', pr.url);

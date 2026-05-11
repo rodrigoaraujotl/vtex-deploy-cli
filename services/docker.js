@@ -26,14 +26,14 @@ class DockerService {
    */
   async startContainers() {
     const spinner = ora('Iniciando containers Docker...').start();
-    
+
     try {
       await this.runCompose(['up', '-d']);
       spinner.succeed('Containers Docker iniciados com sucesso');
-      
+
       // Aguarda um pouco para garantir que os containers estejam prontos
       await this.waitForContainers();
-      
+
       return true;
     } catch (error) {
       spinner.fail('Erro ao iniciar containers Docker');
@@ -48,7 +48,7 @@ class DockerService {
    */
   async stopContainers() {
     const spinner = ora('Parando containers Docker...').start();
-    
+
     try {
       await this.runCompose(['down']);
       spinner.succeed('Containers Docker parados com sucesso');
@@ -170,24 +170,29 @@ class DockerService {
   async waitForContainers(maxWaitTime = 30000) {
     const spinner = ora('Aguardando containers ficarem ativos...').start();
     const startTime = Date.now();
-    
+
     while (Date.now() - startTime < maxWaitTime) {
       try {
-        const { stdout } = await this.runCompose(['ps', '--services', '--filter', 'status=running']);
-        const runningServices = stdout.trim().split('\n').filter(line => line.length > 0);
-        
+        const { stdout } = await execAsync(
+          'docker-compose ps --services --filter "status=running"'
+        );
+        const runningServices = stdout
+          .trim()
+          .split('\n')
+          .filter((line) => line.length > 0);
+
         if (runningServices.length > 0) {
           spinner.succeed('Containers estão ativos e prontos');
           return true;
         }
-        
+
         // Aguarda 2 segundos antes de verificar novamente
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       } catch (error) {
         // Continua tentando
       }
     }
-    
+
     spinner.fail('Timeout: containers não ficaram ativos no tempo esperado');
     return false;
   }
@@ -228,7 +233,9 @@ class DockerService {
       await execFileAsync(this.composeCommand, ['--version']);
       return true;
     } catch (error) {
-      console.error(chalk.red('Docker ou docker-compose não estão instalados ou não estão funcionando'));
+      console.error(
+        chalk.red('Docker ou docker-compose não estão instalados ou não estão funcionando')
+      );
       return false;
     }
   }
