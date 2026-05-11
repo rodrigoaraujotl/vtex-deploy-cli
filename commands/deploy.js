@@ -20,9 +20,20 @@ function registerDeployCommands(program) {
     .option('-f, --force', 'Força o deploy sem confirmação')
     .option('--skip-release', 'Pula a etapa de release')
     .option('--skip-publish', 'Pula a etapa de publish')
-    .option('--only-link', 'Executa apenas o link da aplicação'))
+    .option('--only-link', 'Executa apenas o link da aplicação')
+    .option('--json', 'Emite logs estruturados em JSON Lines')
     .action(async (ambiente, options) => {
-      await runAction(() => executeDeploy(ambiente, options), 'Erro durante o deploy:');
+      try {
+        await executeDeploy(ambiente, options);
+      } catch (error) {
+        logger.structured('deploy_finished', {
+          environment: ambiente,
+          result: 'error',
+          error
+        }, 'error');
+        logger.error('Erro durante o deploy:', error);
+        process.exit(1);
+      }
     });
 
   // Comando deploy:status
@@ -39,9 +50,15 @@ function registerDeployCommands(program) {
     .command('deploy:rollback <ambiente>')
     .description('Faz rollback do último deploy')
     .option('-v, --version <version>', 'Versão específica para rollback')
-    .option('--confirm-rollback', 'Confirma explicitamente o rollback em modo CI/não interativo'))
+    .option('--json', 'Emite logs estruturados em JSON Lines')
     .action(async (ambiente, options) => {
-      await runAction(() => rollbackDeploy(ambiente, options), 'Erro durante o rollback:');
+      try {
+        await rollbackDeploy(ambiente, options);
+      } catch (error) {
+        logger.structured('rollback_finished', { environment: ambiente, result: 'error', error }, 'error');
+        logger.error('Erro durante o rollback:', error);
+        process.exit(1);
+      }
     });
 
   // Comando deploy:logs
@@ -91,12 +108,16 @@ async function executeDeploy(ambiente, options = {}) {
 
   try {
     // 1. Verificar se estamos em um repositório Git
+    const deployStartTime = Date.now();
+    const executedSteps = [];
     let currentBranch = 'unknown';
+    let commitSha = null;
     let workspace = options.workspace;
 
     if (await gitService.isGitRepository()) {
       currentBranch = await gitService.getCurrentBranch();
-
+      commitSha = await gitService.getCurrentCommitSha();
+      
       if (!workspace) {
         workspace = currentBranch;
       }
@@ -119,6 +140,10 @@ async function executeDeploy(ambiente, options = {}) {
         });
         
         if (!shouldContinue) {
+          logger.structured('deploy_finished', {
+            environment: ambiente,
+            result: 'cancelled_uncommitted_changes'
+          }, 'warn');
           logger.info('Deploy cancelado');
           return;
         }
@@ -129,25 +154,49 @@ async function executeDeploy(ambiente, options = {}) {
       workspace = 'main';
     }
 
+    const deployContext = {
+      environment: ambiente,
+      vtexAccount: vtexConfig.account,
+      workspace,
+      branch: currentBranch,
+      commitSha
+    };
+
     logger.info(`Workspace: ${chalk.cyan(workspace)}`);
     logger.info(`Conta VTEX: ${chalk.cyan(vtexConfig.account)}`);
+    logger.structured('deploy_started', deployContext);
 
     // 2. Verificar se Docker está disponível e rodando
-    logger.startSpinner('Verificando Docker...');
-    const dockerStatus = await dockerService.getStatus();
+    await recordStep(executedSteps, 'docker_ready', async () => {
+      logger.startSpinner('Verificando Docker...');
+      const dockerStatus = await dockerService.getStatus();
+      
+      if (!dockerStatus.available) {
+        logger.failSpinner('Docker não está disponível');
+        logger.error('Docker é necessário para executar os comandos VTEX');
+        return false;
+      }
+      
+      if (!dockerStatus.running) {
+        logger.updateSpinner('Iniciando containers Docker...');
+        await dockerService.startContainers();
+        await dockerService.waitForContainers();
+        logger.succeedSpinner('Docker iniciado e pronto');
+      } else {
+        logger.succeedSpinner('Docker disponível e rodando');
+      }
 
-    if (!dockerStatus.available) {
-      logger.failSpinner('Docker não está disponível');
-      throw new CliError('Docker é necessário para executar os comandos VTEX', 1);
-    }
+      return true;
+    }, deployContext);
 
-    if (!dockerStatus.running) {
-      logger.updateSpinner('Iniciando containers Docker...');
-      await dockerService.startContainers();
-      await dockerService.waitForContainers();
-      logger.succeedSpinner('Docker iniciado e pronto');
-    } else {
-      logger.succeedSpinner('Docker disponível e rodando');
+    if (executedSteps[executedSteps.length - 1]?.result === 'failed') {
+      logger.structured('deploy_finished', {
+        ...deployContext,
+        result: 'failed',
+        totalDurationMs: Date.now() - deployStartTime,
+        steps: executedSteps
+      }, 'error');
+      return;
     }
 
     // 3. Confirmar deploy (se não forçado)
@@ -175,6 +224,12 @@ async function executeDeploy(ambiente, options = {}) {
       });
 
       if (!shouldProceed) {
+        logger.structured('deploy_finished', {
+          ...deployContext,
+          result: 'cancelled_by_user',
+          totalDurationMs: Date.now() - deployStartTime,
+          steps: executedSteps
+        }, 'warn');
         logger.info('Deploy cancelado pelo usuário');
         return;
       }
@@ -182,51 +237,65 @@ async function executeDeploy(ambiente, options = {}) {
 
     // 4. Executar deploy VTEX (com geração automática de token)
     logger.newLine();
-    logger.startSpinner('Iniciando deploy VTEX...');
-
-    const deploySuccess =
-      ambiente === 'qa'
-        ? await vtexService.deployToQA(vtexConfig.account, vtexConfig.appkey, vtexConfig.apptoken)
-        : await vtexService.deployToProduction(
-            vtexConfig.account,
-            vtexConfig.appkey,
-            vtexConfig.apptoken
-          );
+    const deploySuccess = await recordStep(executedSteps, 'vtex_auth_deploy', async () => {
+      logger.startSpinner('Iniciando deploy VTEX...');
+      
+      const success = ambiente === 'qa' ?
+        await vtexService.deployToQA(vtexConfig.account, vtexConfig.appkey, vtexConfig.apptoken) :
+        await vtexService.deployToProduction(vtexConfig.account, vtexConfig.appkey, vtexConfig.apptoken);
+      
+      if (!success) {
+        logger.failSpinner('Erro durante o deploy VTEX');
+        return false;
+      }
+      
+      logger.succeedSpinner('Deploy VTEX realizado com sucesso');
+      return true;
+    }, deployContext);
 
     if (!deploySuccess) {
-      logger.failSpinner('Erro durante o deploy VTEX');
-      throw new CliError('Erro durante o deploy VTEX', 1);
+      logger.structured('deploy_finished', {
+        ...deployContext,
+        result: 'failed',
+        totalDurationMs: Date.now() - deployStartTime,
+        steps: executedSteps
+      }, 'error');
+      return;
     }
 
-    logger.succeedSpinner('Deploy VTEX realizado com sucesso');
-
     // 5. Usar workspace
-    logger.startSpinner(`Usando workspace: ${workspace}...`);
-    await vtexService.use(workspace);
-    logger.succeedSpinner(`Workspace ativo: ${chalk.cyan(workspace)}`);
+    await recordStep(executedSteps, 'use_workspace', async () => {
+      logger.startSpinner(`Usando workspace: ${workspace}...`);
+      await vtexService.use(workspace);
+      logger.succeedSpinner(`Workspace ativo: ${chalk.cyan(workspace)}`);
+    }, deployContext);
 
     // 6. Executar etapas do deploy
     const startTime = Date.now();
 
     if (options.onlyLink) {
       // Apenas link
-      logger.startSpinner('Fazendo link da aplicação...');
-      const linkResult = await vtexService.link();
-      logger.succeedSpinner('Link realizado com sucesso');
-
+      const linkResult = await recordStep(executedSteps, 'link', async () => {
+        logger.startSpinner('Fazendo link da aplicação...');
+        const result = await vtexService.link();
+        logger.succeedSpinner('Link realizado com sucesso');
+        return result;
+      }, deployContext);
+      
       if (linkResult && linkResult.previewUrl) {
         logger.newLine();
         logger.url('URL de Preview', linkResult.previewUrl);
       }
     } else {
       // Deploy completo
-      await executeFullDeploy(ambiente, options);
+      await executeFullDeploy(ambiente, options, executedSteps, deployContext);
     }
 
     // 7. Obter informações finais
     const endTime = Date.now();
     const duration = Math.round((endTime - startTime) / 1000);
-
+    const totalDurationMs = endTime - deployStartTime;
+    
     const workspaceInfo = await vtexService.getWorkspaceInfo();
 
     logger.newLine();
@@ -252,9 +321,25 @@ async function executeDeploy(ambiente, options = {}) {
       nextSteps.push('Verifique métricas e logs');
       nextSteps.push('Comunique a equipe sobre o deploy');
     }
+    
+    logger.structured('deploy_finished', {
+      ...deployContext,
+      result: 'success',
+      totalDurationMs,
+      steps: executedSteps
+    }, 'success');
+
+    logger.nextSteps(nextSteps);
 
     logger.nextSteps(nextSteps);
   } catch (error) {
+    logger.structured('deploy_finished', {
+      environment: ambiente,
+      result: 'error',
+      error
+    }, 'error');
+    logger.error('Erro durante o deploy:', error);
+    
     // Sugerir ações de recuperação
     logger.newLine();
     logger.subtitle('Ações de Recuperação');
@@ -273,34 +358,42 @@ async function executeDeploy(ambiente, options = {}) {
  * @param {string} ambiente ambiente
  * @param {Object} options opções
  */
-async function executeFullDeploy(ambiente, options) {
+async function executeFullDeploy(ambiente, options, executedSteps = [], context = {}) {
   // Release
   if (!options.skipRelease) {
-    logger.startSpinner('Executando release...');
-    await vtexService.release();
-    logger.succeedSpinner('Release executado com sucesso');
+    await recordStep(executedSteps, 'release', async () => {
+      logger.startSpinner('Executando release...');
+      await vtexService.release();
+      logger.succeedSpinner('Release executado com sucesso');
+    }, context);
   } else {
     logger.info('Release pulado conforme solicitado');
   }
 
   // Publish
   if (!options.skipPublish) {
-    logger.startSpinner('Executando publish...');
-    await vtexService.publish();
-    logger.succeedSpinner('Publish executado com sucesso');
+    await recordStep(executedSteps, 'publish', async () => {
+      logger.startSpinner('Executando publish...');
+      await vtexService.publish();
+      logger.succeedSpinner('Publish executado com sucesso');
+    }, context);
   } else {
     logger.info('Publish pulado conforme solicitado');
   }
 
   // Deploy específico do ambiente
   if (ambiente === 'qa') {
-    logger.startSpinner('Executando install para QA...');
-    await vtexService.install();
-    logger.succeedSpinner('Install executado com sucesso');
+    await recordStep(executedSteps, 'install_qa', async () => {
+      logger.startSpinner('Executando install para QA...');
+      await vtexService.install();
+      logger.succeedSpinner('Install executado com sucesso');
+    }, context);
   } else {
-    logger.startSpinner('Executando deploy para Produção...');
-    await vtexService.deploy();
-    logger.succeedSpinner('Deploy executado com sucesso');
+    await recordStep(executedSteps, 'deploy_production', async () => {
+      logger.startSpinner('Executando deploy para Produção...');
+      await vtexService.deploy();
+      logger.succeedSpinner('Deploy executado com sucesso');
+    }, context);
   }
 }
 
@@ -480,6 +573,7 @@ async function rollbackDeploy(ambiente, options = {}) {
     }
 
     // Confirmar rollback
+    logger.structured('rollback_target_selected', { environment: ambiente, vtexAccount: vtexConfig.account, targetVersion });
     logger.warn(`ATENÇÃO: Você está prestes a fazer rollback para a versão ${targetVersion}`);
     
     const shouldProceed = await confirm(options, {
@@ -493,7 +587,10 @@ async function rollbackDeploy(ambiente, options = {}) {
       errorMessage: 'Modo não interativo: use --confirm-rollback para confirmar o rollback sem prompt.'
     });
 
+    logger.structured('rollback_confirmation', { environment: ambiente, targetVersion, confirmed: shouldProceed });
+
     if (!shouldProceed) {
+      logger.structured('rollback_finished', { environment: ambiente, targetVersion, result: 'cancelled' }, 'warn');
       logger.info('Rollback cancelado');
       return;
     }
@@ -503,6 +600,7 @@ async function rollbackDeploy(ambiente, options = {}) {
     await vtexService.installVersion(targetVersion);
     logger.succeedSpinner('Rollback executado com sucesso');
 
+    logger.structured('rollback_finished', { environment: ambiente, targetVersion, confirmed: shouldProceed, result: 'success' }, 'success');
     logger.complete(`Rollback para ${ambiente.toUpperCase()} concluído!`);
     logger.info(`Versão ativa: ${chalk.cyan(targetVersion)}`);
 
@@ -514,7 +612,8 @@ async function rollbackDeploy(ambiente, options = {}) {
       'Investigue a causa do problema na versão anterior'
     ]);
   } catch (error) {
-    throw error;
+    logger.structured('rollback_finished', { environment: ambiente, result: 'error', error }, 'error');
+    logger.error('Erro durante o rollback:', error);
   }
 }
 
@@ -564,6 +663,35 @@ async function showDeployLogs(options = {}) {
       logger.info('Acompanhando logs... (Ctrl+C para sair)');
     }
   } catch (error) {
+    throw error;
+  }
+}
+
+
+/**
+ * Executa e registra a duração de uma etapa operacional.
+ * @param {Array<Object>} steps lista acumulada de etapas
+ * @param {string} name nome da etapa
+ * @param {Function} fn função da etapa
+ * @param {Object} context contexto comum do deploy
+ * @returns {Promise<any>} retorno da função executada
+ */
+async function recordStep(steps, name, fn, context = {}) {
+  const startedAt = Date.now();
+  logger.structured('deploy_step_started', { ...context, step: name });
+
+  try {
+    const result = await fn();
+    const durationMs = Date.now() - startedAt;
+    const step = { name, result: result === false ? 'failed' : 'success', durationMs };
+    steps.push(step);
+    logger.structured('deploy_step_finished', { ...context, step: name, ...step }, step.result === 'success' ? 'success' : 'error');
+    return result;
+  } catch (error) {
+    const durationMs = Date.now() - startedAt;
+    const step = { name, result: 'error', durationMs };
+    steps.push(step);
+    logger.structured('deploy_step_finished', { ...context, step: name, ...step, error }, 'error');
     throw error;
   }
 }

@@ -2,7 +2,6 @@ const ora = require('ora');
 const chalk = require('chalk');
 const { httpClient, formatHttpError } = require('./httpClient');
 const dockerService = require('./docker');
-const Validators = require('../utils/validators');
 const logger = require('../utils/logger');
 
 function sanitizeVtexCommand(command) {
@@ -30,8 +29,9 @@ class VtexService {
    * @returns {Promise<Object>} resultado do comando
    */
   async execVtexCommand(command, service = this.defaultService) {
-    const spinner = ora(`Executando: vtex ${command}`).start();
-
+    const safeCommand = logger.sanitizeString(command);
+    const spinner = ora(`Executando: vtex ${safeCommand}`).start();
+    
     try {
       const result = await dockerService.execInContainer(service, `vtex ${command}`);
 
@@ -40,9 +40,8 @@ class VtexService {
         return { success: true, output: result.stdout };
       } else {
         spinner.fail(`Erro ao executar vtex ${safeCommand}`);
-        const safeError = sanitizeErrorMessage(result.error);
-        console.error(chalk.red('Erro:'), safeError);
-        return { success: false, error: safeError };
+        console.error(chalk.red('Erro:'), result.error);
+        return { success: false, error: result.error };
       }
 
       spinner.fail(`Erro ao executar ${safeCommandText}`);
@@ -50,9 +49,8 @@ class VtexService {
       return { success: false, error: logger.redactSensitive(result.error) };
     } catch (error) {
       spinner.fail(`Erro ao executar vtex ${safeCommand}`);
-      const safeError = sanitizeErrorMessage(error.message);
-      console.error(chalk.red('Erro:'), safeError);
-      return { success: false, error: safeError };
+      console.error(chalk.red('Erro:'), error.message);
+      return { success: false, error: error.message };
     }
   }
 
@@ -147,6 +145,10 @@ class VtexService {
    * Faz link da aplicação
    * @returns {Promise<Object>} resultado do link com URL de preview
    */
+  async link() {
+    return this.linkApp();
+  }
+
   async linkApp() {
     const spinner = ora('Fazendo link da aplicação...').start();
 

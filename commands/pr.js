@@ -19,7 +19,8 @@ function registerPRCommands(program) {
     .description('Cria Pull Request para QA ou Produção')
     .option('-t, --title <title>', 'Título do Pull Request')
     .option('-d, --description <description>', 'Descrição do Pull Request')
-    .option('--no-deploy', 'Não executar deploy antes de criar o PR'))
+    .option('--no-deploy', 'Não executar deploy antes de criar o PR')
+    .option('--json', 'Emite logs estruturados em JSON Lines')
     .action(async (ambiente, options) => {
       await runAction(() => createPullRequest(ambiente, options), 'Erro ao criar Pull Request:');
     });
@@ -101,20 +102,30 @@ async function createPullRequest(ambiente, options = {}) {
     const currentBranch = await gitService.getCurrentBranch();
     logger.info(`Branch atual: ${chalk.cyan(currentBranch)}`);
 
-    // 2. Validar branch atual
-    const branchValidation = await gitService.validateBranchForPR(currentBranch, ambiente);
-    if (!branchValidation.valid) {
-      throw new CliError(`Branch inválida para PR: ${branchValidation.reason}`, 2);
-    }
-
-    // 3. Determinar branch de destino
+    // 2. Determinar branch de destino e iniciar rastreamento
     const targetBranch = ambiente === 'qa' ? 'staging' : 'main';
+    const prContext = {
+      environment: ambiente,
+      sourceBranch: currentBranch,
+      destinationBranch: targetBranch
+    };
     logger.info(`Branch de destino: ${chalk.cyan(targetBranch)}`);
+    logger.structured('pr_started', prContext);
+
+    // 3. Validar branch atual
+    const branchValidation = await gitService.validateBranchForPR();
+    if (!branchValidation.valid) {
+      logger.structured('pr_finished', { ...prContext, result: 'failed', reason: branchValidation.message }, 'error');
+      logger.error('Branch inválida para PR:', branchValidation.message);
+      return;
+    }
 
     // 4. Verificar se há mudanças não commitadas
     const hasUncommitted = await gitService.hasUncommittedChanges();
     if (hasUncommitted) {
-      throw new CliError('Há mudanças não commitadas. Commit ou stash suas mudanças antes de criar o PR', 2);
+      logger.structured('pr_finished', { ...prContext, result: 'failed', reason: 'uncommitted_changes' }, 'error');
+      logger.error('Há mudanças não commitadas. Commit ou stash suas mudanças antes de criar o PR');
+      return;
     }
 
     // 5. Verificar se a branch está sincronizada
@@ -134,7 +145,9 @@ async function createPullRequest(ambiente, options = {}) {
         await gitService.push(currentBranch);
         logger.succeedSpinner('Push realizado com sucesso');
       } else {
-        throw new CliError('Branch deve estar sincronizada para criar PR', 2);
+        logger.structured('pr_finished', { ...prContext, result: 'failed', reason: 'branch_not_synced' }, 'error');
+        logger.error('Branch deve estar sincronizada para criar PR');
+        return;
       }
     }
 
@@ -162,6 +175,7 @@ async function createPullRequest(ambiente, options = {}) {
         });
         
         if (!shouldContinue) {
+          logger.structured('pr_finished', { ...prContext, result: 'cancelled_existing_pr' }, 'warn');
           logger.info('Operação cancelada');
           return;
         }
@@ -190,6 +204,7 @@ async function createPullRequest(ambiente, options = {}) {
     });
 
     if (!shouldProceed) {
+      logger.structured('pr_finished', { ...prContext, result: 'cancelled_by_user' }, 'warn');
       logger.info('Operação cancelada pelo usuário');
       return;
     }
@@ -202,7 +217,9 @@ async function createPullRequest(ambiente, options = {}) {
       // Verificar se Docker está rodando
       const dockerStatus = await dockerService.getStatus();
       if (!dockerStatus.running) {
-        throw new CliError('Docker não está rodando. Execute: docker-compose up -d', 1);
+        logger.structured('pr_finished', { ...prContext, result: 'failed', reason: 'docker_not_running' }, 'error');
+        logger.error('Docker não está rodando. Execute: docker-compose up -d');
+        return;
       }
 
       // Deploy VTEX com geração automática de token
@@ -218,7 +235,9 @@ async function createPullRequest(ambiente, options = {}) {
             );
 
       if (!deploySuccess) {
-        throw new CliError('Erro durante o deploy VTEX', 1);
+        logger.structured('pr_finished', { ...prContext, result: 'failed', reason: 'vtex_deploy_failed' }, 'error');
+        logger.error('Erro durante o deploy VTEX');
+        return;
       }
 
       logger.succeedSpinner('Deploy VTEX realizado com sucesso');
@@ -255,6 +274,12 @@ async function createPullRequest(ambiente, options = {}) {
 
     const pr = await bitbucketService.createPullRequest(prData);
     logger.succeedSpinner('Pull Request criado com sucesso!');
+    logger.structured('pr_finished', {
+      ...prContext,
+      pullRequestId: pr.id,
+      pullRequestUrl: pr.url,
+      result: 'success'
+    }, 'success');
 
     // 11. Exibir informações do PR
     logger.newLine();
@@ -269,6 +294,8 @@ async function createPullRequest(ambiente, options = {}) {
       `Acompanhe em: ${pr.url}`
     ]);
   } catch (error) {
+    logger.structured('pr_finished', { result: 'error', error }, 'error');
+    logger.error('Erro durante a criação do PR:', error);
     throw error;
   }
 }

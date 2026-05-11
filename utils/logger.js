@@ -1,9 +1,131 @@
 const chalk = require('chalk');
 const ora = require('ora');
 
+const SECRET_KEY_PATTERN = /(token|appkey|apptoken|authorization|password|secret)/i;
+const MASK = '[MASKED]';
+
 class Logger {
   constructor() {
     this.spinner = null;
+    this.consolePatched = false;
+    this.originalConsole = {
+      log: console.log.bind(console),
+      error: console.error.bind(console),
+      warn: console.warn.bind(console),
+      info: console.info.bind(console)
+    };
+    this.patchConsole();
+  }
+
+  /**
+   * Verifica se a saída estruturada em JSON está habilitada.
+   * @returns {boolean} true quando LOG_FORMAT=json ou --json foram usados
+   */
+  isJsonMode() {
+    return process.env.LOG_FORMAT === 'json' || process.argv.includes('--json');
+  }
+
+  /**
+   * Mascara valores secretos conhecidos ou identificados por nome antes de logar.
+   * @param {any} value valor a sanitizar
+   * @returns {any} valor sanitizado
+   */
+  sanitize(value) {
+    if (value === null || value === undefined) return value;
+
+    if (value instanceof Error) {
+      return {
+        name: value.name,
+        message: this.sanitizeString(value.message),
+        stack: this.sanitizeString(value.stack)
+      };
+    }
+
+    if (Array.isArray(value)) {
+      return value.map(item => this.sanitize(item));
+    }
+
+    if (typeof value === 'object') {
+      const sanitized = {};
+      Object.entries(value).forEach(([key, entryValue]) => {
+        sanitized[key] = SECRET_KEY_PATTERN.test(key) ? MASK : this.sanitize(entryValue);
+      });
+      return sanitized;
+    }
+
+    if (typeof value === 'string') {
+      return this.sanitizeString(value);
+    }
+
+    return value;
+  }
+
+  /**
+   * Mascara segredos em uma string.
+   * @param {string} value texto a sanitizar
+   * @returns {string} texto sanitizado
+   */
+  sanitizeString(value) {
+    if (!value) return value;
+
+    let sanitized = String(value);
+
+    Object.entries(process.env)
+      .filter(([key, secret]) => SECRET_KEY_PATTERN.test(key) && secret && secret.length >= 4)
+      .forEach(([, secret]) => {
+        sanitized = sanitized.split(secret).join(MASK);
+      });
+
+    return sanitized
+      .replace(/(--(?:token|appkey|apptoken)\s+)([^\s,;\"']+)/gi, `$1${MASK}`)
+      .replace(/((?:token|appkey|apptoken|authorization|password|secret)\s*[:=]\s*)([^\s,;\"']+)/gi, `$1${MASK}`)
+      .replace(/("(?:token|appkey|apptoken|authorization|password|secret)"\s*:\s*")([^"]+)(")/gi, `$1${MASK}$3`);
+  }
+
+  /**
+   * Garante que logs diretos via console também tenham segredos mascarados.
+   */
+  patchConsole() {
+    if (this.consolePatched || console.__vtexDeployLoggerPatched) return;
+
+    ['log', 'error', 'warn', 'info'].forEach(method => {
+      const original = console[method].bind(console);
+      console[method] = (...args) => original(...args.map(arg => this.sanitize(arg)));
+    });
+
+    console.__vtexDeployLoggerPatched = true;
+    this.consolePatched = true;
+  }
+
+  /**
+   * Emite um evento estruturado em JSON Lines quando habilitado.
+   * @param {string} event nome do evento
+   * @param {Object} fields campos adicionais
+   * @param {string} level nível do log
+   */
+  structured(event, fields = {}, level = 'info') {
+    if (!this.isJsonMode()) return;
+
+    const payload = this.sanitize({
+      timestamp: new Date().toISOString(),
+      level,
+      event,
+      ...fields
+    });
+
+    this.originalConsole.log(JSON.stringify(payload));
+  }
+
+  write(level, icon, color, message, data = null, stream = console.log) {
+    if (this.isJsonMode()) {
+      this.structured('log', { message, data }, level);
+      return;
+    }
+
+    stream(color(icon), this.sanitize(message));
+    if (data) {
+      stream(this.sanitize(data));
+    }
   }
 
   /**
@@ -64,10 +186,7 @@ class Logger {
    * @param {any} data dados adicionais (opcional)
    */
   info(message, data = null) {
-    console.log(chalk.blue('ℹ'), this.redactSensitive(message));
-    if (data) {
-      console.log(this.redactSensitive(data));
-    }
+    this.write('info', 'ℹ', chalk.blue, message, data);
   }
 
   /**
@@ -76,10 +195,7 @@ class Logger {
    * @param {any} data dados adicionais (opcional)
    */
   success(message, data = null) {
-    console.log(chalk.green('✓'), this.redactSensitive(message));
-    if (data) {
-      console.log(this.redactSensitive(data));
-    }
+    this.write('success', '✓', chalk.green, message, data);
   }
 
   /**
@@ -88,10 +204,7 @@ class Logger {
    * @param {any} data dados adicionais (opcional)
    */
   warn(message, data = null) {
-    console.log(chalk.yellow('⚠'), this.redactSensitive(message));
-    if (data) {
-      console.log(this.redactSensitive(data));
-    }
+    this.write('warn', '⚠', chalk.yellow, message, data);
   }
 
   /**
@@ -100,12 +213,17 @@ class Logger {
    * @param {any} error erro (opcional)
    */
   error(message, error = null) {
-    console.log(chalk.red('✗'), this.redactSensitive(message));
+    if (this.isJsonMode()) {
+      this.structured('log', { message, error }, 'error');
+      return;
+    }
+
+    console.log(chalk.red('✗'), this.sanitize(message));
     if (error) {
       if (error.stack) {
-        console.error(chalk.red(this.redactSensitive(error.stack)));
+        console.error(chalk.red(this.sanitizeString(error.stack)));
       } else {
-        console.error(chalk.red(this.redactSensitive(error)));
+        console.error(chalk.red(this.sanitize(error)));
       }
     }
   }
@@ -117,9 +235,14 @@ class Logger {
    */
   debug(message, data = null) {
     if (process.env.DEBUG || process.env.NODE_ENV === 'development') {
-      console.log(chalk.gray('🐛'), chalk.gray(this.redactSensitive(message)));
+      if (this.isJsonMode()) {
+        this.structured('debug', { message, data }, 'debug');
+        return;
+      }
+
+      console.log(chalk.gray('🐛'), chalk.gray(this.sanitize(message)));
       if (data) {
-        console.log(chalk.gray(JSON.stringify(this.redactSensitive(data), null, 2)));
+        console.log(chalk.gray(JSON.stringify(this.sanitize(data), null, 2)));
       }
     }
   }
@@ -130,7 +253,13 @@ class Logger {
    * @returns {Object} instância do spinner
    */
   startSpinner(message) {
-    this.spinner = ora(this.redactSensitive(message)).start();
+    if (this.isJsonMode()) {
+      this.structured('spinner_start', { message });
+      this.spinner = null;
+      return null;
+    }
+
+    this.spinner = ora(this.sanitize(message)).start();
     return this.spinner;
   }
 
@@ -139,8 +268,13 @@ class Logger {
    * @param {string} message mensagem de sucesso
    */
   succeedSpinner(message) {
+    if (this.isJsonMode()) {
+      this.structured('spinner_success', { message }, 'success');
+      return;
+    }
+
     if (this.spinner) {
-      this.spinner.succeed(this.redactSensitive(message));
+      this.spinner.succeed(this.sanitize(message));
       this.spinner = null;
     }
   }
@@ -150,8 +284,13 @@ class Logger {
    * @param {string} message mensagem de erro
    */
   failSpinner(message) {
+    if (this.isJsonMode()) {
+      this.structured('spinner_error', { message }, 'error');
+      return;
+    }
+
     if (this.spinner) {
-      this.spinner.fail(this.redactSensitive(message));
+      this.spinner.fail(this.sanitize(message));
       this.spinner = null;
     }
   }
@@ -161,8 +300,13 @@ class Logger {
    * @param {string} message mensagem de aviso
    */
   warnSpinner(message) {
+    if (this.isJsonMode()) {
+      this.structured('spinner_warn', { message }, 'warn');
+      return;
+    }
+
     if (this.spinner) {
-      this.spinner.warn(this.redactSensitive(message));
+      this.spinner.warn(this.sanitize(message));
       this.spinner = null;
     }
   }
@@ -172,8 +316,13 @@ class Logger {
    * @param {string} message nova mensagem
    */
   updateSpinner(message) {
+    if (this.isJsonMode()) {
+      this.structured('spinner_update', { message });
+      return;
+    }
+
     if (this.spinner) {
-      this.spinner.text = this.redactSensitive(message);
+      this.spinner.text = this.sanitize(message);
     }
   }
 
@@ -182,8 +331,13 @@ class Logger {
    * @param {string} title título
    */
   title(title) {
+    if (this.isJsonMode()) {
+      this.structured('title', { title });
+      return;
+    }
+
     console.log();
-    console.log(chalk.bold.cyan(`🚀 ${title}`));
+    console.log(chalk.bold.cyan(`🚀 ${this.sanitize(title)}`));
     console.log(chalk.cyan('─'.repeat(title.length + 3)));
   }
 
@@ -192,14 +346,20 @@ class Logger {
    * @param {string} subtitle subtítulo
    */
   subtitle(subtitle) {
+    if (this.isJsonMode()) {
+      this.structured('subtitle', { subtitle });
+      return;
+    }
+
     console.log();
-    console.log(chalk.bold.yellow(`📋 ${subtitle}`));
+    console.log(chalk.bold.yellow(`📋 ${this.sanitize(subtitle)}`));
   }
 
   /**
    * Exibe linha separadora
    */
   separator() {
+    if (this.isJsonMode()) return;
     console.log(chalk.gray('─'.repeat(50)));
   }
 
@@ -207,6 +367,7 @@ class Logger {
    * Exibe linha em branco
    */
   newLine() {
+    if (this.isJsonMode()) return;
     console.log();
   }
 
@@ -216,8 +377,13 @@ class Logger {
    * @param {string} symbol símbolo para cada item
    */
   list(items, symbol = '•') {
-    items.forEach((item) => {
-      console.log(`  ${chalk.cyan(symbol)} ${item}`);
+    if (this.isJsonMode()) {
+      this.structured('list', { items });
+      return;
+    }
+
+    items.forEach(item => {
+      console.log(`  ${chalk.cyan(symbol)} ${this.sanitize(item)}`);
     });
   }
 
@@ -227,16 +393,21 @@ class Logger {
    * @param {Array} headers cabeçalhos (opcional)
    */
   table(rows, headers = null) {
+    if (this.isJsonMode()) {
+      this.structured('table', { headers, rows });
+      return;
+    }
+
     if (headers) {
-      console.log(chalk.bold(headers.join('\t')));
+      console.log(chalk.bold(this.sanitize(headers).join('\t')));
       console.log(chalk.gray('─'.repeat(headers.join('\t').length)));
     }
 
     rows.forEach((row) => {
       if (Array.isArray(row)) {
-        console.log(row.join('\t'));
+        console.log(this.sanitize(row).join('\t'));
       } else {
-        console.log(row);
+        console.log(this.sanitize(row));
       }
     });
   }
@@ -246,6 +417,11 @@ class Logger {
    * @param {Object} status objeto com informações de status
    */
   status(status) {
+    if (this.isJsonMode()) {
+      this.structured('status', { status });
+      return;
+    }
+
     this.subtitle('Status Atual');
 
     Object.entries(status).forEach(([key, value]) => {
@@ -263,7 +439,12 @@ class Logger {
    * @param {string} url URL
    */
   url(label, url) {
-    console.log(`${chalk.green(label)}: ${chalk.cyan.underline(url)}`);
+    if (this.isJsonMode()) {
+      this.structured('url', { label, url });
+      return;
+    }
+
+    console.log(`${chalk.green(this.sanitize(label))}: ${chalk.cyan.underline(this.sanitize(url))}`);
   }
 
   /**
@@ -271,7 +452,12 @@ class Logger {
    * @param {string} command comando
    */
   command(command) {
-    console.log(`${chalk.yellow('$')} ${chalk.white(this.redactSensitive(command))}`);
+    if (this.isJsonMode()) {
+      this.structured('command', { command });
+      return;
+    }
+
+    console.log(`${chalk.yellow('$')} ${chalk.white(this.sanitize(command))}`);
   }
 
   /**
@@ -279,6 +465,11 @@ class Logger {
    * @param {Object} pr dados do PR
    */
   pullRequest(pr) {
+    if (this.isJsonMode()) {
+      this.structured('pull_request', { pullRequest: pr });
+      return;
+    }
+
     this.subtitle(`Pull Request #${pr.id}`);
     console.log(`  ${chalk.yellow('Título:')} ${pr.title}`);
     console.log(`  ${chalk.yellow('Estado:')} ${this.formatPRState(pr.state)}`);
@@ -315,6 +506,11 @@ class Logger {
    * @param {Object} workspace dados do workspace
    */
   workspace(workspace) {
+    if (this.isJsonMode()) {
+      this.structured('workspace', { workspace });
+      return;
+    }
+
     this.subtitle('Workspace VTEX');
     console.log(`  ${chalk.yellow('Conta:')} ${chalk.cyan(workspace.account)}`);
     console.log(`  ${chalk.yellow('Workspace:')} ${chalk.cyan(workspace.workspace)}`);
@@ -325,6 +521,11 @@ class Logger {
    * Exibe banner de boas-vindas
    */
   welcome() {
+    if (this.isJsonMode()) {
+      this.structured('welcome', { application: 'VTEX Deploy CLI' });
+      return;
+    }
+
     console.log();
     console.log(chalk.bold.cyan('🚀 VTEX Deploy CLI'));
     console.log(chalk.gray('Automatização de deploy para aplicações VTEX IO'));
@@ -336,8 +537,13 @@ class Logger {
    * @param {string} message mensagem
    */
   complete(message) {
+    if (this.isJsonMode()) {
+      this.structured('complete', { message }, 'success');
+      return;
+    }
+
     console.log();
-    console.log(chalk.bold.green('🎉 ' + message));
+    console.log(chalk.bold.green('🎉 ' + this.sanitize(message)));
     console.log();
   }
 
@@ -346,6 +552,11 @@ class Logger {
    * @param {Array} steps lista de passos
    */
   nextSteps(steps) {
+    if (this.isJsonMode()) {
+      this.structured('next_steps', { steps });
+      return;
+    }
+
     this.subtitle('Próximos Passos');
     steps.forEach((step, index) => {
       console.log(`  ${chalk.cyan(index + 1 + '.')} ${step}`);
