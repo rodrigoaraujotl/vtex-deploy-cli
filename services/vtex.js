@@ -4,6 +4,7 @@ const ora = require('ora');
 const chalk = require('chalk');
 const axios = require('axios');
 const dockerService = require('./docker');
+const logger = require('../utils/logger');
 
 const execAsync = promisify(exec);
 
@@ -19,21 +20,22 @@ class VtexService {
    * @returns {Promise<Object>} resultado do comando
    */
   async execVtexCommand(command, service = this.defaultService) {
-    const spinner = ora(`Executando: vtex ${command}`).start();
+    const safeCommand = logger.sanitizeString(command);
+    const spinner = ora(`Executando: vtex ${safeCommand}`).start();
     
     try {
       const result = await dockerService.execInContainer(service, `vtex ${command}`);
       
       if (result.success) {
-        spinner.succeed(`Comando vtex ${command} executado com sucesso`);
+        spinner.succeed(`Comando vtex ${safeCommand} executado com sucesso`);
         return { success: true, output: result.stdout };
       } else {
-        spinner.fail(`Erro ao executar vtex ${command}`);
+        spinner.fail(`Erro ao executar vtex ${safeCommand}`);
         console.error(chalk.red('Erro:'), result.error);
         return { success: false, error: result.error };
       }
     } catch (error) {
-      spinner.fail(`Erro ao executar vtex ${command}`);
+      spinner.fail(`Erro ao executar vtex ${safeCommand}`);
       console.error(chalk.red('Erro:'), error.message);
       return { success: false, error: error.message };
     }
@@ -118,10 +120,18 @@ class VtexService {
     return result.success;
   }
 
+  async use(workspace) {
+    return this.useWorkspace(workspace);
+  }
+
   /**
    * Faz link da aplicação
    * @returns {Promise<Object>} resultado do link com URL de preview
    */
+  async link() {
+    return this.linkApp();
+  }
+
   async linkApp() {
     const spinner = ora('Fazendo link da aplicação...').start();
     

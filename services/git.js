@@ -117,6 +117,30 @@ class GitService {
     }
   }
 
+
+  /**
+   * Faz push de uma branch para origin.
+   * @param {string} branch nome da branch
+   * @returns {Promise<boolean>} true se sucesso
+   */
+  async push(branch) {
+    return this.pushBranch('origin', branch);
+  }
+
+  /**
+   * Verifica se a branch local não possui commits pendentes de push/pull.
+   * @returns {Promise<boolean>} true quando a branch está sincronizada
+   */
+  async isBranchSynced() {
+    try {
+      const status = await this.git.status();
+      return status.ahead === 0 && status.behind === 0;
+    } catch (error) {
+      console.error(chalk.red('Erro ao verificar sincronização da branch:'), error.message);
+      return false;
+    }
+  }
+
   /**
    * Faz pull das mudanças
    * @param {string} remote nome do remote (padrão: origin)
@@ -245,6 +269,20 @@ class GitService {
       return log.latest;
     } catch (error) {
       console.error(chalk.red('Erro ao obter último commit:'), error.message);
+      return null;
+    }
+  }
+
+
+  /**
+   * Obtém o SHA do commit atual.
+   * @returns {Promise<string|null>} SHA do HEAD atual
+   */
+  async getCurrentCommitSha() {
+    try {
+      return (await this.git.revparse(['HEAD'])).trim();
+    } catch (error) {
+      console.error(chalk.red('Erro ao obter SHA do commit atual:'), error.message);
       return null;
     }
   }
